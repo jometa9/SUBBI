@@ -2,7 +2,6 @@
 @tailwind components;
 @tailwind utilities;
 
-/* ============ Theme tokens ============ */
 :root,
 :root[data-theme='dark'] {
   color-scheme: dark;
@@ -217,7 +216,6 @@
 * { box-sizing: border-box; }
 html, body, #root { height: 100%; margin: 0; }
 
-/* Block text selection across the app, but keep inputs usable */
 html, body {
   -webkit-user-select: none;
   -moz-user-select: none;
@@ -241,7 +239,6 @@ body {
   font-feature-settings: 'cv11', 'ss01', 'ss03';
 }
 
-/* ============ Custom scrollbar (matches buttons/sliders, fully square) ============ */
 *::-webkit-scrollbar { width: 14px; height: 14px; }
 *::-webkit-scrollbar-track {
   background: var(--c-bg-track);
@@ -250,7 +247,7 @@ body {
 }
 *::-webkit-scrollbar:horizontal { height: 14px; }
 *::-webkit-scrollbar:horizontal {
-  /* horizontal track keeps the dark inset look but no left border */
+
 }
 *::-webkit-scrollbar-track:horizontal {
   border-left: none;
@@ -272,7 +269,7 @@ body {
   filter: none;
 }
 *::-webkit-scrollbar-corner { background: var(--c-bg-track); border: 1px solid var(--c-border); }
-/* Firefox fallback: thin square-ish bar with matching colors */
+
 * { scrollbar-color: var(--c-btn-top) var(--c-bg-track); scrollbar-width: thin; }
 
 .app {
@@ -290,7 +287,6 @@ body {
 .app-body > .preview { flex: 1 1 auto; min-width: 0; }
 .app-body > .pr-sidebar { flex: 0 0 320px; }
 
-/* ============ Top window titlebar (matches Electron titleBarOverlay height = 32) ============ */
 .app-titlebar {
   display: flex;
   align-items: center;
@@ -298,7 +294,7 @@ body {
   height: 32px;
   flex-shrink: 0;
   padding: 0 12px;
-  /* leave room for Windows window controls (~138px on the right) */
+
   padding-right: 150px;
   background: var(--c-bg-titlebar);
   border-bottom: 1px solid var(--c-border);
@@ -307,8 +303,7 @@ body {
   user-select: none;
   gap: 8px;
 }
-/* On macOS the traffic-light controls sit on the left (~78px) and there are no
-   right-side window controls, so swap the reserved space accordingly. */
+
 .app-titlebar.is-mac {
   padding-left: 84px;
   padding-right: 12px;
@@ -437,7 +432,6 @@ body {
 }
 .app-titlebar-theme svg { display: block; }
 
-/* ============ Premiere-style sidebar ============ */
 .pr-sidebar {
   background: var(--c-bg-panel);
   border-left: 1px solid var(--c-border);
@@ -448,7 +442,7 @@ body {
   position: relative;
   font-size: 11px;
 }
-/* Section: flat, no rounded corners, header bar + body, collapsible */
+
 .pr-section { display: flex; flex-direction: column; }
 .pr-section-head {
   display: flex;
@@ -470,7 +464,6 @@ body {
 .pr-section-head:hover { background: var(--c-bg-hover); }
 .pr-section-head:active { background: var(--c-bg-section-active); }
 
-/* Disclosure triangle — points right when closed, down when open */
 .pr-section-chev {
   width: 0;
   height: 0;
@@ -486,7 +479,6 @@ body {
 }
 .pr-section-head:hover .pr-section-chev { border-left-color: var(--c-text); }
 
-/* Collapsed body */
 .pr-section.is-closed > .pr-section-body { display: none; }
 .pr-section-title {
   font-size: 10px;
@@ -515,7 +507,6 @@ body {
 }
 .pr-section-body-dim { opacity: 0.45; }
 
-/* Row: label + control(s) */
 .pr-row {
   display: flex;
   align-items: center;
@@ -543,7 +534,6 @@ body {
   white-space: nowrap;
 }
 
-/* Inputs */
 .pr-input {
   background: var(--c-bg-input);
   border: 1px solid var(--c-border);
@@ -570,7 +560,6 @@ select.pr-input {
   padding-right: 18px;
 }
 
-/* Buttons */
 .pr-btn {
   background: linear-gradient(to bottom, var(--c-btn-top), var(--c-btn-bot));
   border: 1px solid var(--c-border);
@@ -598,7 +587,6 @@ select.pr-input {
 }
 .pr-btn-ghost:hover:not(:disabled) { background: var(--c-bg-section); filter: none; }
 
-/* Aspect chips */
 .pr-aspect-row {
   display: flex;
   flex: 1 1 auto;
@@ -626,7 +614,6 @@ select.pr-input {
 .pr-chip-on:hover:not(:disabled) { background: var(--c-accent); color: #fff; }
 .pr-chip:disabled { opacity: 0.4; cursor: not-allowed; }
 
-/* Color */
 .pr-color {
   width: 28px;
   height: 22px;
@@ -637,7 +624,6 @@ select.pr-input {
   border-radius: 0;
 }
 
-/* ============ Custom Color Picker ============ */
 .cp-trigger {
   display: inline-flex;
   align-items: center;
@@ -781,7 +767,6 @@ select.pr-input {
   box-shadow: inset 0 0 0 1px var(--c-preset-glow);
 }
 
-/* Checkbox row */
 .pr-check {
   display: inline-flex;
   align-items: center;
@@ -793,7 +778,6 @@ select.pr-input {
 }
 .pr-check input { accent-color: var(--c-accent); margin: 0; }
 
-/* Filename + hints */
 .pr-filename {
   font-size: 10px;
   color: var(--c-text-dim);
@@ -805,7 +789,6 @@ select.pr-input {
 }
 .pr-hint { font-size: 10px; color: var(--c-text-faint); font-style: italic; }
 
-/* Badge / toggle pushed to right side of section header */
 .pr-badge {
   font-size: 9px;
   font-weight: 600;
@@ -819,7 +802,6 @@ select.pr-input {
 .pr-section-head .pr-section-toggle { margin-left: auto; }
 .pr-section-head .pr-section-toggle + .pr-badge { margin-left: 0; }
 
-/* Status (progress + log) */
 .pr-status {
   padding: 8px 10px;
   background: var(--c-bg-titlebar);
@@ -852,7 +834,6 @@ select.pr-input {
   margin: 0;
 }
 
-/* Toasts */
 .pr-toast {
   font-size: 10px;
   padding: 6px 10px;
@@ -864,7 +845,6 @@ select.pr-input {
 .pr-toast-ok { background: var(--c-toast-ok-bg); color: var(--c-toast-ok-text); }
 .pr-toast-err { background: var(--c-toast-err-bg); color: var(--c-toast-err-text); }
 
-/* Export footer — sticky */
 .pr-export {
   position: sticky;
   bottom: 0;
@@ -929,7 +909,6 @@ select.pr-input {
   border-color: var(--c-success-deep);
 }
 
-/* ============ Preview area ============ */
 .preview {
   display: flex;
   flex-direction: column;
@@ -942,7 +921,6 @@ select.pr-input {
   min-width: 0;
 }
 
-/* ===== Preview top toolbar (zoom + speed) ===== */
 .preview-toolbar {
   display: flex;
   align-items: center;
@@ -1028,7 +1006,6 @@ select.pr-input {
 }
 .vc-speed { width: 70px; flex: 0 0 70px; }
 
-/* ===== Video stage = scrollable container; centers video when smaller ===== */
 .video-stage {
   flex: 1 1 auto;
   min-height: 0;
@@ -1135,7 +1112,7 @@ video {
   pointer-events: auto;
   text-shadow: none;
 }
-/* Inline edit textarea — sits inside the overlay, mimics the cue text */
+
 .subtitle-edit {
   display: block;
   width: 100%;
@@ -1157,7 +1134,6 @@ video {
 }
 .subtitle-edit:focus { border-color: var(--c-accent); }
 
-/* Range slider — Premiere-flat */
 input[type="range"].pr-range {
   -webkit-appearance: none;
   appearance: none;
@@ -1197,7 +1173,6 @@ input[type="range"].pr-range:disabled::-webkit-slider-thumb {
 }
 input[type="range"].pr-range-flex { flex: 1 1 auto; min-width: 0; }
 
-/* ============ Custom video controls bar ============ */
 .video-controls {
   display: flex;
   align-items: center;
@@ -1249,7 +1224,6 @@ input[type="range"].pr-range-flex { flex: 1 1 auto; min-width: 0; }
 .vc-seek { flex: 1 1 auto; min-width: 80px; }
 .vc-volume { width: 70px; flex: 0 0 70px; }
 
-/* Inline timeline-zoom slider next to the volume slider in the playback bar. */
 .vc-zoom-icon {
   display: inline-flex;
   align-items: center;
@@ -1293,7 +1267,6 @@ input[type="range"].pr-range-flex { flex: 1 1 auto; min-width: 0; }
   padding: 0 4px;
 }
 
-/* Split markers overlay on the silence timeline */
 .st-wrap { position: relative; }
 .st-marker {
   position: absolute;
@@ -1313,7 +1286,7 @@ input[type="range"].pr-range-flex { flex: 1 1 auto; min-width: 0; }
   content: '';
   position: absolute;
   inset: 0 -4px;
-  /* Wider invisible hit area for easier clicking */
+
 }
 .st-marker:hover { background: var(--c-danger-mid); }
 .st-marker.is-selected {
@@ -1333,7 +1306,6 @@ input[type="range"].pr-range-flex { flex: 1 1 auto; min-width: 0; }
 }
 .vc-seek-row .vc-seek { width: 100%; flex: 1 1 auto; min-width: 0; }
 
-/* ============ Custom Select ============ */
 .cs-trigger {
   display: inline-flex;
   align-items: center;
@@ -1431,11 +1403,9 @@ input[type="range"].pr-range-flex { flex: 1 1 auto; min-width: 0; }
   text-overflow: ellipsis;
 }
 
-/* Make titlebar/speed selects fill their wrapper */
 .app-titlebar-lang .cs-trigger { width: 100%; height: 20px; }
 .vc-speed.cs-trigger { width: 70px; flex: 0 0 70px; }
 
-/* Drag region */
 .drag-region { -webkit-app-region: drag; app-region: drag; }
 .drag-region button,
 .drag-region input,
@@ -1448,7 +1418,6 @@ input[type="range"].pr-range-flex { flex: 1 1 auto; min-width: 0; }
   app-region: no-drag;
 }
 
-/* ============ Crop pixel inputs ============ */
 .pr-crop-px-row { align-items: flex-start; }
 .pr-crop-px-grid {
   flex: 1 1 auto;
@@ -1491,7 +1460,6 @@ input[type="range"].pr-range-flex { flex: 1 1 auto; min-width: 0; }
   margin: 0;
 }
 
-/* ============ Audio strip (seek + waveform + compact vertical faders) ============ */
 .audio-strip {
   display: flex;
   flex-direction: row;
@@ -1508,7 +1476,7 @@ input[type="range"].pr-range-flex { flex: 1 1 auto; min-width: 0; }
   flex-direction: column;
   gap: 6px;
 }
-/* Seek and waveform share the same column so 0% and 100% line up perfectly. */
+
 .audio-strip-seek {
   width: 100%;
   display: flex;
@@ -1534,7 +1502,6 @@ input[type="range"].pr-range-flex { flex: 1 1 auto; min-width: 0; }
   padding: 0 4px;
 }
 
-/* Horizontal scroller that wraps both seek and waveform so they zoom in sync. */
 .audio-strip-scroll {
   width: 100%;
   overflow-x: auto;
@@ -1549,8 +1516,6 @@ input[type="range"].pr-range-flex { flex: 1 1 auto; min-width: 0; }
   min-width: 100%;
 }
 
-/* Vertical line that follows the mouse across the timeline. Distinct color
-   from the playhead cursor (--c-warn) so they don't get confused. */
 .audio-strip-hoverline {
   position: absolute;
   top: 0;
@@ -1563,7 +1528,6 @@ input[type="range"].pr-range-flex { flex: 1 1 auto; min-width: 0; }
   z-index: 6;
 }
 
-/* Time ruler — sits at the top of the zoomable timeline, scales with zoom. */
 .audio-strip-ruler {
   position: relative;
   width: 100%;
@@ -1599,12 +1563,11 @@ input[type="range"].pr-range-flex { flex: 1 1 auto; min-width: 0; }
   pointer-events: none;
 }
 .audio-strip-ruler-label.is-end {
-  /* Anchor the last label to the right edge so it doesn't overflow. */
+
   left: auto;
   right: 3px;
 }
 
-/* Hover frame preview floating above the timeline. */
 .timeline-preview {
   position: fixed;
   z-index: 1000;
@@ -1693,7 +1656,6 @@ input[type="range"].pr-range-flex { flex: 1 1 auto; min-width: 0; }
   white-space: nowrap;
 }
 
-/* Vertical slim slider — flat, square, matches the volume slider. */
 input[type="range"].pr-range-v {
   -webkit-appearance: none;
   appearance: none;
@@ -1729,7 +1691,7 @@ input[type="range"].pr-range-v::-webkit-slider-thumb {
   border: 1px solid var(--c-border);
   border-radius: 1px;
   cursor: pointer;
-  /* Center the thumb across the 4px track inside a 14px wide input. */
+
   margin-left: -5px;
 }
 input[type="range"].pr-range-v::-webkit-slider-thumb:hover {
@@ -1740,7 +1702,6 @@ input[type="range"].pr-range-v:disabled::-webkit-slider-thumb {
   cursor: not-allowed;
 }
 
-/* App-styled tooltip on hover for compact labels */
 .has-tip { position: relative; }
 .has-tip::before,
 .has-tip::after {

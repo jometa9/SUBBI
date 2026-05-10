@@ -8,6 +8,8 @@ import { exportVideo, type ExportOptions } from './export';
 
 const isDev = !app.isPackaged;
 
+const SHOW_DEV_TOOLS = false;
+
 let mainWindow: BrowserWindow | null = null;
 
 function createWindow() {
@@ -35,23 +37,22 @@ function createWindow() {
 
   if (isDev) {
     mainWindow.loadURL('http://localhost:5180');
-    mainWindow.webContents.openDevTools({ mode: 'detach' });
+    if (SHOW_DEV_TOOLS) {
+      mainWindow.webContents.openDevTools({ mode: 'detach' });
+    }
   } else {
     mainWindow.loadFile(path.join(__dirname, '..', '..', 'dist', 'index.html'));
   }
 
-  // Block refresh, devtools shortcuts, and similar reload attempts.
   mainWindow.webContents.on('before-input-event', (event, input) => {
     if (input.type !== 'keyDown') return;
     const key = (input.key || '').toLowerCase();
     const ctrlOrMeta = input.control || input.meta;
 
-    // Refresh: F5, Ctrl+R, Ctrl+Shift+R, Ctrl+F5
     if (key === 'f5' || (ctrlOrMeta && key === 'r')) {
       event.preventDefault();
       return;
     }
-    // DevTools: F12, Ctrl+Shift+I, Ctrl+Shift+J, Ctrl+Shift+C, Ctrl+U (view-source)
     if (key === 'f12') { event.preventDefault(); return; }
     if (ctrlOrMeta && input.shift && (key === 'i' || key === 'j' || key === 'c')) {
       event.preventDefault();
@@ -60,7 +61,6 @@ function createWindow() {
     if (ctrlOrMeta && key === 'u') { event.preventDefault(); return; }
   });
 
-  // Block any programmatic devtools open in production.
   if (!isDev) {
     mainWindow.webContents.on('devtools-opened', () => {
       mainWindow?.webContents.closeDevTools();

@@ -6,7 +6,7 @@ export type SilenceRegion = {
   id: string;
   start: number;
   end: number;
-  enabled: boolean; // true = will be cut
+  enabled: boolean;
 };
 
 export interface SilenceTimelineHandle {
@@ -63,7 +63,6 @@ const SilenceTimeline = React.forwardRef<SilenceTimelineHandle, Props>(function 
     },
   }));
 
-  // Init wavesurfer once we have a container, video element, peaks and duration.
   useEffect(() => {
     if (!containerRef.current || !videoEl || !peaks || peaks.length === 0 || duration <= 0) return;
 
@@ -108,10 +107,8 @@ const SilenceTimeline = React.forwardRef<SilenceTimelineHandle, Props>(function 
       wsRef.current = null;
       regionsPluginRef.current = null;
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [videoEl, peaks, duration]);
 
-  // Update wavesurfer colors when the theme changes without re-creating it.
   useEffect(() => {
     const ws = wsRef.current;
     if (!ws) return;
@@ -125,7 +122,6 @@ const SilenceTimeline = React.forwardRef<SilenceTimelineHandle, Props>(function 
     } catch {}
   }, [theme]);
 
-  // Sync regions list with the plugin.
   useEffect(() => {
     const plugin = regionsPluginRef.current;
     if (!plugin) return;
@@ -163,9 +159,6 @@ const SilenceTimeline = React.forwardRef<SilenceTimelineHandle, Props>(function 
     }
   }, [regions]);
 
-  // Note: with `media: videoEl`, wavesurfer subscribes to the video's `timeupdate`
-  // and moves the cursor automatically. We don't need to seek manually here.
-
   const showMarkers = duration > 0 && splitMarkers.length > 0;
 
   return (
@@ -173,7 +166,6 @@ const SilenceTimeline = React.forwardRef<SilenceTimelineHandle, Props>(function 
       className="st-wrap w-full relative"
       style={{ minHeight: height }}
       onClick={(e) => {
-        // Click on empty area (not a marker) clears selection.
         if ((e.target as HTMLElement).dataset.splitMarker == null) {
           onSelectMarker?.(null);
         }

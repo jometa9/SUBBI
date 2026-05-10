@@ -386,8 +386,6 @@ function fmtTime(sec: number): string {
     : `${pad(m)}:${pad(s)}.${pad(ms)}`;
 }
 
-// Compact tick label for the timeline ruler. Shows tenths only when the tick
-// interval is sub-second so labels stay readable at low zoom.
 function fmtRulerTime(sec: number, intervalSec: number): string {
   if (!isFinite(sec) || sec < 0) sec = 0;
   const pad = (n: number) => String(n).padStart(2, '0');
@@ -401,7 +399,6 @@ function fmtRulerTime(sec: number, intervalSec: number): string {
   return h > 0 ? `${h}:${pad(m)}:${pad(s)}` : `${pad(m)}:${pad(s)}`;
 }
 
-// Choose a "nice" tick spacing in seconds for a given target spacing.
 function pickRulerInterval(targetSec: number): number {
   const niceSeconds = [0.1, 0.2, 0.5, 1, 2, 5, 10, 15, 30, 60, 120, 300, 600, 900, 1800, 3600];
   for (const n of niceSeconds) if (n >= targetSec) return n;
@@ -479,7 +476,7 @@ function autosaveStats(currentVideoPath: string | null): { total: number; others
       count += 1;
       if (k !== currentKey) { others += bytes; othersCount += 1; }
     }
-  } catch { /* ignore */ }
+  } catch {}
   return { total, others, count, othersCount };
 }
 
@@ -494,7 +491,7 @@ function clearOtherProjects(currentVideoPath: string | null): number {
       toRemove.push(k);
     }
     for (const k of toRemove) localStorage.removeItem(k);
-  } catch { /* ignore */ }
+  } catch {}
   return toRemove.length;
 }
 
@@ -532,7 +529,6 @@ function saveSettings(s: PersistedSettings) {
 
 const DEFAULT_CROP: CropRect = { x: 0.1, y: 0.1, width: 0.8, height: 0.8 };
 
-// Build the inline style for a Premiere-flat range so the filled portion is lila.
 function rangePct(value: number, min: number, max: number): React.CSSProperties {
   if (max === min) return { ['--pct' as any]: '0%' };
   const pct = Math.max(0, Math.min(100, ((value - min) / (max - min)) * 100));
@@ -553,14 +549,11 @@ export default function App() {
   const [themePref, setThemePref] = useState<ThemePref>(() => initial.theme ?? 'system');
   const [resolvedTheme, setResolvedTheme] = useState<ResolvedTheme>(() => resolveTheme(initial.theme ?? 'system'));
 
-  // Subtitles (independent of process phase now)
   const [srtPath, setSrtPath] = useState<string | null>(null);
   const [rawCues, setRawCues] = useState<Cue[] | null>(null);
-  // Inline subtitle editing on the preview overlay
   const [editingCue, setEditingCue] = useState<Cue | null>(null);
   const [editingText, setEditingText] = useState<string>('');
 
-  // Silence
   const [silenceRegions, setSilenceRegions] = useState<SilenceRegion[]>([]);
   const [thresholdDb, setThresholdDb] = useState<number>(-30);
   const [autoThreshold, setAutoThreshold] = useState<boolean>(true);
@@ -570,12 +563,10 @@ export default function App() {
   const [peaks, setPeaks] = useState<number[] | null>(null);
   const timelineRef = useRef<SilenceTimelineHandle>(null);
 
-  // Timeline zoom (1 = fit, up to 10x). Both seek bar and waveform scale together.
   const [timelineZoom, setTimelineZoom] = useState<number>(1);
   const timelineScrollRef = useRef<HTMLDivElement>(null);
   const lastZoomRef = useRef<number>(1);
 
-  // Hover frame preview over seek/timeline. Position is in viewport coords.
   const [hoverPreview, setHoverPreview] = useState<
     { time: number; clientX: number; topY: number } | null
   >(null);
@@ -600,23 +591,25 @@ export default function App() {
     }
   }, []);
 
-  // Width of the timeline scroll viewport — used to pick a tick spacing that
-  // keeps the ruler from getting too dense or too sparse.
   const [scrollViewportW, setScrollViewportW] = useState<number>(800);
 
-  // Crop
   const [cropEnabled, setCropEnabled] = useState<boolean>(false);
   const [cropEditing, setCropEditing] = useState<boolean>(false);
   const [crop, setCrop] = useState<CropRect>(DEFAULT_CROP);
   const [aspectId, setAspectId] = useState<string>('free');
 
-  // Audio gain (dB) applied on export
   const [volumeDb, setVolumeDb] = useState<number>(0);
-  // Noise gate threshold (dB) — anything below is silenced. -60..-1.
   const [noiseGateDb, setNoiseGateDb] = useState<number>(-40);
   const [noiseGateEnabled, setNoiseGateEnabled] = useState<boolean>(false);
 
-  // Split markers (sorted ascending). On export, produce one file per segment between markers.
+  const audioCtxRef = useRef<AudioContext | null>(null);
+  const audioSourceRef = useRef<MediaElementAudioSourceNode | null>(null);
+  const audioGainRef = useRef<GainNode | null>(null);
+  const audioGateRef = useRef<GainNode | null>(null);
+  const audioAnalyserRef = useRef<AnalyserNode | null>(null);
+  const audioGateBufferRef = useRef<Float32Array | null>(null);
+  const audioGateRafRef = useRef<number | null>(null);
+
   const [splitMarkers, setSplitMarkers] = useState<number[]>([]);
   const [selectedMarker, setSelectedMarker] = useState<number | null>(null);
 
@@ -624,7 +617,6 @@ export default function App() {
     if (!videoDuration) return;
     const t = Math.max(0, Math.min(videoDuration, currentTime));
     setSplitMarkers(prev => {
-      // Avoid duplicates within ~50ms.
       if (prev.some(m => Math.abs(m - t) < 0.05)) return prev;
       return [...prev, t].sort((a, b) => a - b);
     });
@@ -635,8 +627,6 @@ export default function App() {
     setSelectedMarker(null);
   }
 
-  // Two-stage confirm for reset buttons. Tracks which key (e.g. 'all', 'crop'…)
-  // is currently awaiting a second click. Auto-cancels on outside click & timeout.
   const [confirmReset, setConfirmReset] = useState<string | null>(null);
   const confirmTimerRef = useRef<number | null>(null);
   function armReset(key: string) {
@@ -711,17 +701,15 @@ export default function App() {
     resetAudio();
     resetStyle();
     resetSplits();
-    // Drop any inline cue edit in progress and re-segment from raw transcription.
     setEditingCue(null);
     setEditingText('');
   }
 
-  // Custom video controls
   const [isPlaying, setIsPlaying] = useState(false);
   const [volume, setVolume] = useState(1);
   const [muted, setMuted] = useState(false);
   const [playbackRate, setPlaybackRate] = useState(1);
-  const [previewZoom, setPreviewZoom] = useState(1); // 1 = fit
+  const [previewZoom, setPreviewZoom] = useState(1);
   const ZOOM_MIN = 0.05, ZOOM_MAX = 8;
 
   function getFitScale(): number {
@@ -761,7 +749,6 @@ export default function App() {
     setPreviewZoom(v.videoWidth / fitW);
   }
 
-  // Collapsible sidebar sections
   const [openSections, setOpenSections] = useState<Record<string, boolean>>({
     crop: true, silence: true, audio: true, transcription: true, style: true,
     ...(initial.openSections ?? {}),
@@ -795,7 +782,6 @@ export default function App() {
 
   useEffect(() => { setStorageStats(autosaveStats(videoPath)); }, [videoPath]);
 
-  // Block context menu, refresh shortcuts and devtools shortcuts at the renderer level too.
   useEffect(() => {
     const onContextMenu = (e: MouseEvent) => e.preventDefault();
     const onKey = (e: KeyboardEvent) => {
@@ -824,9 +810,6 @@ export default function App() {
   }, []);
 
   const t = (k: keyof typeof TRANSLATIONS['en']) => TRANSLATIONS[uiLang][k] ?? TRANSLATIONS.en[k];
-  // Translate a backend-emitted event key like "evt:transcribe.progress:42" or
-  // "evt:err.transcribe" into a clean, localized message. Returns '' for unknown keys.
-  // Tolerates IPC wrappers that prefix the message ("Error: evt:..." etc.).
   const tEvt = (raw: string): string => {
     if (!raw) return '';
     const m = raw.match(/evt:([A-Za-z]+\.[A-Za-z]+)(?::([0-9]+))?/);
@@ -871,7 +854,7 @@ export default function App() {
             const t = Math.max(0, Math.min((v.duration || p.currentTime + 1) - 0.05, p.currentTime));
             v.currentTime = t;
           }
-        } catch { /* ignore */ }
+        } catch {}
         pendingPlaybackRef.current = null;
       }
     };
@@ -897,13 +880,96 @@ export default function App() {
     else v.pause();
   }
 
-  // Apply playback rate whenever it changes or video reloads.
   useEffect(() => {
     const v = videoRef.current;
     if (v) v.playbackRate = playbackRate;
   }, [playbackRate, videoUrl]);
 
-  // Load the hidden preview video with the same source so hover scrubbing is instant.
+  useEffect(() => {
+    const v = videoRef.current;
+    if (!v) return;
+    const ensure = () => {
+      if (audioCtxRef.current) return;
+      try {
+        const Ctx: typeof AudioContext | undefined =
+          (window as any).AudioContext || (window as any).webkitAudioContext;
+        if (!Ctx) return;
+        const ctx = new Ctx();
+        const src = ctx.createMediaElementSource(v);
+        const gateGain = ctx.createGain();
+        const volGain = ctx.createGain();
+        const analyser = ctx.createAnalyser();
+        analyser.fftSize = 1024;
+        src.connect(analyser);
+        src.connect(gateGain);
+        gateGain.connect(volGain);
+        volGain.connect(ctx.destination);
+        volGain.gain.value = Math.pow(10, volumeDb / 20);
+        gateGain.gain.value = 1;
+        audioCtxRef.current = ctx;
+        audioSourceRef.current = src;
+        audioGainRef.current = volGain;
+        audioGateRef.current = gateGain;
+        audioAnalyserRef.current = analyser;
+        audioGateBufferRef.current = new Float32Array(analyser.fftSize);
+      } catch { /* preview falls back to raw element audio */ }
+    };
+    const onPlay = () => {
+      ensure();
+      const ctx = audioCtxRef.current;
+      if (ctx && ctx.state === 'suspended') ctx.resume().catch(() => {});
+    };
+    v.addEventListener('play', onPlay);
+    return () => v.removeEventListener('play', onPlay);
+  }, [videoUrl]);
+
+  useEffect(() => {
+    const g = audioGainRef.current;
+    const ctx = audioCtxRef.current;
+    if (!g || !ctx) return;
+    const lin = Math.pow(10, volumeDb / 20);
+    g.gain.setTargetAtTime(lin, ctx.currentTime, 0.02);
+  }, [volumeDb]);
+
+  useEffect(() => {
+    const ctx = audioCtxRef.current;
+    const gate = audioGateRef.current;
+    if (!noiseGateEnabled) {
+      if (gate && ctx) gate.gain.setTargetAtTime(1, ctx.currentTime, 0.02);
+      if (audioGateRafRef.current != null) {
+        cancelAnimationFrame(audioGateRafRef.current);
+        audioGateRafRef.current = null;
+      }
+      return;
+    }
+    let cancelled = false;
+    const tick = () => {
+      if (cancelled) return;
+      const c = audioCtxRef.current;
+      const an = audioAnalyserRef.current;
+      const g = audioGateRef.current;
+      const buf = audioGateBufferRef.current;
+      if (c && an && g && buf) {
+        an.getFloatTimeDomainData(buf as Float32Array<ArrayBuffer>);
+        let sum = 0;
+        for (let i = 0; i < buf.length; i++) sum += buf[i] * buf[i];
+        const rms = Math.sqrt(sum / buf.length);
+        const thr = Math.pow(10, noiseGateDb / 20);
+        const open = rms > thr;
+        g.gain.setTargetAtTime(open ? 1 : 0, c.currentTime, open ? 0.005 : 0.04);
+      }
+      audioGateRafRef.current = requestAnimationFrame(tick);
+    };
+    audioGateRafRef.current = requestAnimationFrame(tick);
+    return () => {
+      cancelled = true;
+      if (audioGateRafRef.current != null) {
+        cancelAnimationFrame(audioGateRafRef.current);
+        audioGateRafRef.current = null;
+      }
+    };
+  }, [noiseGateEnabled, noiseGateDb]);
+
   useEffect(() => {
     const pv = previewVideoRef.current;
     if (!pv) return;
@@ -916,7 +982,6 @@ export default function App() {
     }
   }, [videoUrl]);
 
-  // Seek the preview video as the hover position changes.
   useEffect(() => {
     const pv = previewVideoRef.current;
     if (!pv || !hoverPreview) return;
@@ -926,7 +991,6 @@ export default function App() {
     }
   }, [hoverPreview]);
 
-  // Track the timeline scroll viewport width so the ruler can adapt its tick density.
   useEffect(() => {
     const el = timelineScrollRef.current;
     if (!el) return;
@@ -941,8 +1005,6 @@ export default function App() {
     return () => window.removeEventListener('resize', update);
   }, [videoUrl]);
 
-  // When zoom changes, keep the cursor (currentTime) under the same horizontal viewport
-  // position. This avoids jumping to t=0 when zooming in.
   useEffect(() => {
     const el = timelineScrollRef.current;
     const dur = videoDuration;
@@ -993,10 +1055,7 @@ export default function App() {
     return off;
   }, [uiLang]);
 
-  // Tracks whether the load just happened so the autosave effect doesn't immediately
-  // re-write the freshly-restored state (which would be a no-op but adds noise).
   const justLoadedRef = useRef(false);
-  // Pending restored playback state to apply once the video element is ready.
   const pendingPlaybackRef = useRef<{ currentTime?: number; volume?: number; muted?: boolean; playbackRate?: number } | null>(null);
   const [autosaveTick, setAutosaveTick] = useState<'idle' | 'saved'>('idle');
   const [storageStats, setStorageStats] = useState<{ total: number; others: number; count: number; othersCount: number }>(
@@ -1015,7 +1074,6 @@ export default function App() {
       else { try { localStorage.removeItem(LAST_VIDEO_KEY); } catch {} }
     })();
     return () => { cancelled = true; };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   function loadVideo(filePath: string) {
@@ -1087,7 +1145,6 @@ export default function App() {
     setSelectedMarker(null);
   }
 
-  // Autosave: persist the current edit state for this video (debounced).
   useEffect(() => {
     if (!videoPath) return;
     if (justLoadedRef.current) { justLoadedRef.current = false; return; }
@@ -1120,14 +1177,13 @@ export default function App() {
         if (cancelled) return;
         setPeaks(res.peaks);
         setVideoDuration(d => d || res.duration);
-      } catch { /* ignore */ }
+      } catch {}
     })();
     return () => { cancelled = true; };
   }, [videoPath]);
 
   useEffect(() => { if (videoUrl && videoRef.current) bumpVideoEl(n => n + 1); }, [videoUrl]);
 
-  // Skip enabled silence regions during playback.
   useEffect(() => {
     const v = videoRef.current;
     if (!v || v.paused || silenceRegions.length === 0) return;
@@ -1228,7 +1284,6 @@ export default function App() {
       return;
     }
 
-    // Build segments: bounded by split markers.
     const cuts = [...splitMarkers].sort((a, b) => a - b);
     const segmentBounds: { start: number; end: number }[] = [];
     let prev = 0;
@@ -1239,7 +1294,6 @@ export default function App() {
     if (videoDuration > prev + 0.02) segmentBounds.push({ start: prev, end: videoDuration });
     if (segmentBounds.length === 0) segmentBounds.push({ start: 0, end: videoDuration });
 
-    // Within each segment, intersect with silence-keep ranges.
     const baseKeep = hasSilence ? buildKeepRanges() : null;
     function rangesForSegment(seg: { start: number; end: number }) {
       if (!baseKeep) return [{ start: seg.start, end: seg.end }];
@@ -1248,7 +1302,6 @@ export default function App() {
         .filter(r => r.end - r.start > 0.02);
     }
 
-    // Output paths.
     const sep = videoPath.includes('\\') ? '\\' : '/';
     const dir = videoPath.substring(0, videoPath.lastIndexOf(sep));
     const file = videoPath.substring(videoPath.lastIndexOf(sep) + 1);
@@ -1268,9 +1321,6 @@ export default function App() {
         const useKeep = hasSilence || multi;
         const outName = multi ? `${base}.subbi.${i + 1}${ext}` : `${base}.subbi${ext}`;
         const outputPath = `${dir}${sep}${outName}`;
-        // If any cue was edited inline, the SRT on disk already holds the
-        // resegmented form with the user's atoms; tell the burner not to
-        // re-split (would undo the user's added words).
         const hasEditedCues = !!(rawCues && rawCues.some(c => c.edited));
         const burnStyle = hasEditedCues ? { ...style, maxWords: 0 } : style;
         const segOut = await window.subbi.exportVideo({
@@ -1334,7 +1384,7 @@ export default function App() {
     );
     setRawCues(updated);
     if (srtPath) {
-      window.subbi.writeSrt({ srtPath, content: formatSrt(updated) }).catch(() => { /* ignore */ });
+      window.subbi.writeSrt({ srtPath, content: formatSrt(updated) }).catch(() => {});
     }
     cancelEditCue();
   }
@@ -1347,7 +1397,6 @@ export default function App() {
 
   const aspectRatio = ASPECT_PRESETS.find(a => a.id === aspectId)?.ratio ?? null;
 
-  // Pixel inputs for crop (derived from normalized values + intrinsic video size).
   const videoW = videoRef.current?.videoWidth ?? 0;
   const videoH = videoRef.current?.videoHeight ?? 0;
   const cropPxX = videoW ? Math.round(crop.x * videoW) : 0;
@@ -1363,7 +1412,6 @@ export default function App() {
     if (p.y != null) next.y = Math.max(0, Math.min(videoH - 1, p.y)) / videoH;
     if (p.w != null) next.width = Math.max(1, Math.min(videoW, p.w)) / videoW;
     if (p.h != null) next.height = Math.max(1, Math.min(videoH, p.h)) / videoH;
-    // Keep the rect within the frame.
     if (next.x + next.width > 1) next.x = Math.max(0, 1 - next.width);
     if (next.y + next.height > 1) next.y = Math.max(0, 1 - next.height);
     setCrop(next);
@@ -1372,14 +1420,12 @@ export default function App() {
     setCropEditing(true);
   }
 
-  // Major ruler ticks (with label) and minor ticks (5 subdivisions per major).
   const rulerTicks = useMemo(() => {
     if (!videoDuration || videoDuration <= 0) {
       return { major: [] as number[], minor: [] as number[], interval: 1 };
     }
     const innerWidth = Math.max(1, scrollViewportW * timelineZoom);
     const pxPerSec = innerWidth / videoDuration;
-    // Aim for a major tick roughly every 90px on screen.
     const targetSec = 90 / pxPerSec;
     const interval = pickRulerInterval(targetSec);
     const major: number[] = [];
@@ -1936,7 +1982,6 @@ export default function App() {
 
       <aside className="pr-sidebar">
 
-        {/* CROP */}
         <div className={'pr-section' + (openSections.crop ? ' is-open' : ' is-closed')}>
           <button className="pr-section-head" onClick={() => toggleSection('crop')} type="button">
             <span className="pr-section-chev" />
@@ -2066,7 +2111,6 @@ export default function App() {
           </div>
         </div>
 
-        {/* SILENCE */}
         <div className={'pr-section' + (openSections.silence ? ' is-open' : ' is-closed')}>
           <button className="pr-section-head" onClick={() => toggleSection('silence')} type="button">
             <span className="pr-section-chev" />
@@ -2117,7 +2161,6 @@ export default function App() {
           </div>
         </div>
 
-        {/* AUDIO */}
         <div className={'pr-section' + (openSections.audio ? ' is-open' : ' is-closed')}>
           <button className="pr-section-head" onClick={() => toggleSection('audio')} type="button">
             <span className="pr-section-chev" />
@@ -2175,7 +2218,6 @@ export default function App() {
           </div>
         </div>
 
-        {/* TRANSCRIPTION */}
         <div className={'pr-section' + (openSections.transcription ? ' is-open' : ' is-closed')}>
           <button className="pr-section-head" onClick={() => toggleSection('transcription')} type="button">
             <span className="pr-section-chev" />
@@ -2220,7 +2262,6 @@ export default function App() {
           </div>
         </div>
 
-        {/* SUBTITLE STYLE */}
         <div className={'pr-section' + (openSections.style ? ' is-open' : ' is-closed')}>
           <button className="pr-section-head" onClick={() => toggleSection('style')} type="button">
             <span className="pr-section-chev" />
@@ -2363,7 +2404,6 @@ export default function App() {
           </div>
         </div>
 
-        {/* STATUS */}
         {(proc.phase === 'transcribing' || proc.phase === 'exporting') && (
           <div className="pr-status">
             <div className="pr-progress">
@@ -2379,7 +2419,6 @@ export default function App() {
           <div className="pr-toast pr-toast-err">✕ {proc.message}</div>
         )}
 
-        {/* EXPORT FOOTER */}
         <div className="pr-export">
           <div className="pr-export-meta">
             <span className={'pr-pill' + (cropEnabled ? ' on' : '')}>{t('pillCrop')}</span>
@@ -2407,7 +2446,6 @@ export default function App() {
       </aside>
       </div>
 
-      {/* Hover preview: hidden video stays mounted so seeking is instant. */}
       <div
         className={'timeline-preview' + (hoverPreview && videoUrl ? ' is-on' : '')}
         style={

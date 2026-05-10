@@ -8,11 +8,11 @@ import { findFfmpeg, parseDurationFromStderr, parseTimeFromStderr } from './ffmp
 export interface SubtitleStyle {
   fontName: string;
   fontSize: number;
-  color: string;        // #RRGGBB
-  outline: string;      // #RRGGBB
+  color: string;
+  outline: string;
   outlineEnabled?: boolean;
-  marginVPct: number;   // % of video height from bottom
-  marginHPct: number;   // % horizontal shift, 0 = centered, +right / -left
+  marginVPct: number;
+  marginHPct: number;
   textCase: 'asis' | 'upper' | 'lower';
   maxWords: number;
 }
@@ -23,7 +23,6 @@ export interface BurnOptions {
   style: SubtitleStyle;
 }
 
-// ASS uses &HBBGGRR (BGR not RGB) with optional alpha. Convert "#RRGGBB" -> "&H00BBGGRR".
 function hexToAssColor(hex: string): string {
   const m = hex.match(/^#?([0-9a-f]{6})$/i);
   if (!m) return '&H00FFFFFF';
@@ -96,7 +95,6 @@ function resegmentByWords(cues: Cue[], maxWords: number): Cue[] {
   return out;
 }
 
-// Apply re-segmentation by word count and text-case transform; write a temp SRT.
 function transformSrt(srtPath: string, textCase: SubtitleStyle['textCase'], maxWords: number): string {
   const needsResegment = maxWords && maxWords > 0;
   if (textCase === 'asis' && !needsResegment) return srtPath;
@@ -115,8 +113,6 @@ function transformSrt(srtPath: string, textCase: SubtitleStyle['textCase'], maxW
   return out;
 }
 
-// Escape SRT path for use inside the ffmpeg subtitles= filter on Windows.
-// Also escape the path-separator colon.
 function escapeForFilter(p: string): string {
   return p.replace(/\\/g, '/').replace(/:/g, '\\:').replace(/'/g, "\\'");
 }
@@ -133,12 +129,7 @@ export async function burn(
   const outPath = path.join(path.dirname(opts.videoPath), `${base}.subtitled${ext}`);
   if (fs.existsSync(outPath)) fs.unlinkSync(outPath);
 
-  // Margin in pixels we don't know without probing. Use Alignment=2 + MarginV in absolute units.
-  // Alignment=2 = bottom-center. MarginV is in script units; with PlayResY=720 default a value
-  // ~= 720 * (marginVPct/100) maps approximately. Good enough.
   const marginV = Math.round(720 * (opts.style.marginVPct / 100));
-  // For Alignment=2 (bottom-center) the text is centered between MarginL and (PlayResX - MarginR).
-  // Shifting the centre by `shift` requires MarginL - MarginR = 2*shift.
   const hShift = Math.round(1280 * ((opts.style.marginHPct || 0) / 100));
   const marginL = Math.max(0, 2 * hShift);
   const marginR = Math.max(0, -2 * hShift);
@@ -196,9 +187,8 @@ export async function burn(
     });
     child.on('error', reject);
     child.on('close', (code) => {
-      // cleanup transformed temp srt
       if (srtToUse !== opts.srtPath) {
-        try { fs.unlinkSync(srtToUse); } catch { /* ignore */ }
+        try { fs.unlinkSync(srtToUse); } catch {}
       }
       if (code === 0) {
         onProgress(100, 'evt:burn.done');

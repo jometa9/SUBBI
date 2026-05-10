@@ -10,8 +10,8 @@ export interface SilenceRange {
 
 export interface DetectSilencesOptions {
   videoPath: string;
-  thresholdDb?: number;   // if omitted, auto = mean_volume - 12
-  minDurSec?: number;     // default 0.5
+  thresholdDb?: number;
+  minDurSec?: number;
 }
 
 export interface DetectSilencesResult {
@@ -23,13 +23,13 @@ export interface DetectSilencesResult {
 
 export interface CutSilencesOptions {
   videoPath: string;
-  keepRanges: SilenceRange[]; // segments to KEEP (concatenated in order)
+  keepRanges: SilenceRange[];
 }
 
 export interface ExtractPeaksResult {
-  peaks: number[];     // normalized 0..1, one per bin
-  duration: number;    // seconds
-  sampleRate: number;  // bins per second (effective)
+  peaks: number[];
+  duration: number;
+  sampleRate: number;
 }
 
 function ffprobeDuration(ffmpeg: string, videoPath: string): Promise<number> {
@@ -100,7 +100,6 @@ export async function detectSilences(opts: DetectSilencesOptions): Promise<Detec
         const e = Math.min(duration, ends[i]);
         if (e > s) out.push({ start: s, end: e });
       }
-      // Trailing silence (started but never ended before EOF)
       if (starts.length > ends.length) {
         const s = Math.max(0, starts[starts.length - 1]);
         if (duration > s) out.push({ start: s, end: duration });
@@ -112,7 +111,6 @@ export async function detectSilences(opts: DetectSilencesOptions): Promise<Detec
   return { silences, duration, thresholdDb: threshold, meanVolumeDb: mean };
 }
 
-// Decode the audio with ffmpeg into low-rate PCM and bin into peaks for waveform display.
 export async function extractPeaks(videoPath: string, targetBins = 2000): Promise<ExtractPeaksResult> {
   const ffmpeg = findFfmpeg();
   const duration = await ffprobeDuration(ffmpeg, videoPath);
@@ -151,7 +149,6 @@ export async function extractPeaks(videoPath: string, targetBins = 2000): Promis
   return { peaks, duration, sampleRate: bins / Math.max(duration, 0.001) };
 }
 
-// Build the keep-ranges from the user's edited timeline and produce a cut video.
 export async function cutSilences(
   opts: CutSilencesOptions,
   onProgress: (pct: number, line: string) => void
@@ -169,7 +166,6 @@ export async function cutSilences(
   const outPath = path.join(path.dirname(opts.videoPath), `${base}.nosilence${ext}`);
   if (fs.existsSync(outPath)) fs.unlinkSync(outPath);
 
-  // Build filter_complex. Must split [0:v] / [0:a] into N copies before trimming each.
   const n = ranges.length;
   const vSplitOuts = Array.from({ length: n }, (_, i) => `[vsplit${i}]`).join('');
   const aSplitOuts = Array.from({ length: n }, (_, i) => `[asplit${i}]`).join('');
@@ -191,7 +187,6 @@ export async function cutSilences(
   const filter = parts.join(';');
 
   let totalSec: number | null = null;
-  // Final output duration is the sum of kept ranges; use it for progress mapping.
   const outDuration = ranges.reduce((s, r) => s + (r.end - r.start), 0);
   onProgress(0, 'evt:cut.starting');
 

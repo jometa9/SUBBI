@@ -54,7 +54,6 @@ export async function transcribe(
   const wavPath = path.join(tmpDir, `${randomUUID()}.wav`);
 
   try {
-    // 1) Extract WAV 16kHz mono from video
     onProgress(0, 'evt:transcribe.extractingAudio');
     let totalSec: number | null = null;
     let lastExtractMilestone = -1;
@@ -74,7 +73,7 @@ export async function transcribe(
           for (const line of s.split(/\r|\n/)) {
             const t = parseTimeFromStderr(line);
             if (t != null) {
-              const pct = Math.min(100, (t / totalSec) * 100 * 0.15); // extract = 0..15%
+              const pct = Math.min(100, (t / totalSec) * 100 * 0.15);
               const phasePct = Math.min(100, Math.round((t / totalSec) * 100));
               const milestone = Math.floor(phasePct / 25) * 25;
               if (milestone > lastExtractMilestone && milestone > 0 && milestone < 100) {
@@ -92,7 +91,6 @@ export async function transcribe(
     });
     onProgress(15, 'evt:transcribe.audioReady');
 
-    // 2) Run whisper
     onProgress(15, 'evt:transcribe.starting');
     const threads = Math.max(2, Math.floor(os.cpus().length / 2));
     const args = [
@@ -137,23 +135,21 @@ export async function transcribe(
       child.on('close', (code) => code === 0 ? resolve() : reject(new Error('evt:err.transcribe')));
     });
 
-    // 3) Read SRT next to wav
     onProgress(98, 'evt:transcribe.savingSubtitles');
     const srtPath = `${wavPath}.srt`;
     if (!fs.existsSync(srtPath)) throw new Error('evt:err.subtitlesMissing');
     const srt = fs.readFileSync(srtPath, 'utf8');
 
-    // Move SRT next to video
     const finalSrt = path.join(
       path.dirname(opts.videoPath),
       path.basename(opts.videoPath, path.extname(opts.videoPath)) + '.srt'
     );
-    try { fs.copyFileSync(srtPath, finalSrt); } catch { /* keep tmp if copy fails */ }
+    try { fs.copyFileSync(srtPath, finalSrt); } catch {}
 
     onProgress(100, 'evt:transcribe.done');
     return { srtPath: fs.existsSync(finalSrt) ? finalSrt : srtPath, srt };
   } finally {
-    try { fs.unlinkSync(wavPath); } catch { /* ignore */ }
-    try { fs.unlinkSync(`${wavPath}.srt`); } catch { /* ignore */ }
+    try { fs.unlinkSync(wavPath); } catch {}
+    try { fs.unlinkSync(`${wavPath}.srt`); } catch {}
   }
 }

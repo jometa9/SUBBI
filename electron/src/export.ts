@@ -20,20 +20,20 @@ export interface SubtitleStyle {
 export interface KeepRange { start: number; end: number; }
 
 export interface CropNormalized {
-  x: number;       // 0..1
-  y: number;       // 0..1
-  width: number;   // 0..1
-  height: number;  // 0..1
+  x: number;
+  y: number;
+  width: number;
+  height: number;
 }
 
 export interface ExportOptions {
   videoPath: string;
-  keepRanges?: KeepRange[];           // segments to KEEP (post-silence-cut). If empty/undefined, no cut.
-  crop?: CropNormalized | null;       // null => no crop
+  keepRanges?: KeepRange[];
+  crop?: CropNormalized | null;
   subtitles?: { srtPath: string; style: SubtitleStyle } | null;
-  volumeDb?: number;                  // audio gain in dB; 0 => no change
-  noiseGateDb?: number | null;        // mute audio below this threshold in dB; null/undefined => off
-  outputPath?: string;                // override default `${base}.subbi${ext}`
+  volumeDb?: number;
+  noiseGateDb?: number | null;
+  outputPath?: string;
 }
 
 type Cue = { start: number; end: number; text: string };
@@ -133,7 +133,6 @@ function escapeForFilter(p: string): string {
 }
 
 function buildSubtitlesFilter(srtPath: string, style: SubtitleStyle): string {
-  // Margins in ASS PlayRes units (default 720x1280-ish; ffmpeg scales).
   const marginV = Math.round(720 * (style.marginVPct / 100));
   const hShift = Math.round(1280 * ((style.marginHPct || 0) / 100));
   const marginL = Math.max(0, 2 * hShift);
@@ -160,8 +159,6 @@ function buildCropFilter(c: CropNormalized): string {
   const y = clamp01(c.y);
   const w = clamp01(c.width);
   const h = clamp01(c.height);
-  // Use ffmpeg expressions referring to input dims; ensure even pixels for codec.
-  // floor to even by subtracting modulo.
   return `crop='trunc(iw*${w}/2)*2':'trunc(ih*${h}/2)*2':'trunc(iw*${x}/2)*2':'trunc(ih*${y}/2)*2'`;
 }
 
@@ -177,20 +174,16 @@ export async function exportVideo(
     ?? path.join(path.dirname(opts.videoPath), `${base}.subbi${ext}`);
   if (fs.existsSync(outPath)) fs.unlinkSync(outPath);
 
-  // Normalize keep ranges. If none provided (or provided empty after filter), treat as a single full segment.
   const ranges = (opts.keepRanges || [])
     .map(r => ({ start: Math.max(0, r.start), end: r.end }))
     .filter(r => r.end - r.start > 0.02)
     .sort((a, b) => a.start - b.start);
-  // Any explicit keepRanges trigger trimming. Caller is responsible for passing
-  // them only when an actual cut/segment is wanted.
   const willCut = ranges.length > 0;
 
   const srtTransformed = opts.subtitles
     ? transformSrt(opts.subtitles.srtPath, opts.subtitles.style)
     : null;
 
-  // Build pre-cut chain: crop -> subtitles, both optional.
   const preChain: string[] = [];
   let preLabel = '[0:v]';
   if (opts.crop) preChain.push(buildCropFilter(opts.crop));
@@ -212,7 +205,6 @@ export async function exportVideo(
   const volumeDb = typeof opts.volumeDb === 'number' && isFinite(opts.volumeDb) ? opts.volumeDb : 0;
   const wantsVolume = Math.abs(volumeDb) > 0.01;
   const gateDb = typeof opts.noiseGateDb === 'number' && isFinite(opts.noiseGateDb) ? opts.noiseGateDb : null;
-  // Treat 0 dB or above as "off" — gating at full scale silences everything.
   const wantsGate = gateDb != null && gateDb < -0.01 && gateDb > -90;
   let audioSourceLabel = '[0:a]';
   if (wantsVolume) {
@@ -220,8 +212,6 @@ export async function exportVideo(
     audioSourceLabel = '[avol]';
   }
   if (wantsGate) {
-    // Spectral denoiser: removes noise below the floor, leaves voice/peaks above untouched.
-    // afftdn nf (noise floor) accepts -80..-20 dB.
     const nf = Math.min(-20, Math.max(-80, gateDb!));
     filterParts.push(
       `${audioSourceLabel}afftdn=nf=${nf.toFixed(1)}:nr=12[agate]`
@@ -257,7 +247,6 @@ export async function exportVideo(
     mapV = '0:v';
     mapA = audioSourceLabel;
   } else {
-    // Nothing to do — just remux/copy.
     mapV = '0:v';
     mapA = '0:a?';
   }
@@ -267,7 +256,6 @@ export async function exportVideo(
     args.push('-filter_complex', filterParts.join(';'));
   }
   args.push('-map', mapV, '-map', mapA);
-  // Always re-encode video when there's any filter; copy when nothing changed.
   if (filterParts.length > 0) {
     args.push('-c:v', 'libx264', '-preset', 'veryfast', '-crf', '20');
     args.push('-c:a', 'aac', '-b:a', '192k');
@@ -306,7 +294,7 @@ export async function exportVideo(
     child.on('error', reject);
     child.on('close', (code) => {
       if (srtTransformed && srtTransformed !== opts.subtitles?.srtPath) {
-        try { fs.unlinkSync(srtTransformed); } catch { /* ignore */ }
+        try { fs.unlinkSync(srtTransformed); } catch {}
       }
       if (code === 0) {
         onProgress(100, 'evt:export.done');

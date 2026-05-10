@@ -4,9 +4,7 @@ export type CropRect = { x: number; y: number; width: number; height: number };
 
 interface Props {
   videoEl: HTMLVideoElement | null;
-  // Crop in normalized coordinates (0..1) relative to the video's intrinsic frame.
   crop: CropRect;
-  // Aspect ratio lock as width/height. null = free.
   aspectRatio: number | null;
   onChange: (next: CropRect) => void;
   onApply?: () => void;
@@ -21,8 +19,6 @@ type Handle = 'n' | 's' | 'e' | 'w' | 'ne' | 'nw' | 'se' | 'sw';
 
 function clamp(v: number, lo: number, hi: number) { return Math.min(hi, Math.max(lo, v)); }
 
-// Compute the on-screen rect of the actual painted video pixels inside the <video> element
-// (object-fit: contain leaves letterbox bars).
 function getRenderedVideoRect(v: HTMLVideoElement): { left: number; top: number; width: number; height: number } | null {
   const cw = v.clientWidth;
   const ch = v.clientHeight;
@@ -39,7 +35,6 @@ function getRenderedVideoRect(v: HTMLVideoElement): { left: number; top: number;
     h = ch;
     w = ch * videoAspect;
   }
-  // Offset of the <video> element within its positioned ancestor (the overlay parent).
   const ox = v.offsetLeft;
   const oy = v.offsetTop;
   return { left: ox + (cw - w) / 2, top: oy + (ch - h) / 2, width: w, height: h };
@@ -64,7 +59,6 @@ export default function CropOverlay({ videoEl, crop, aspectRatio, onChange, onAp
   const dragRef = useRef<DragMode | null>(null);
   const [renderedRect, setRenderedRect] = useState<{ left: number; top: number; width: number; height: number } | null>(null);
 
-  // Recompute rendered rect on resize / metadata load.
   useLayoutEffect(() => {
     if (!videoEl) return;
     const update = () => setRenderedRect(getRenderedVideoRect(videoEl));
@@ -80,26 +74,21 @@ export default function CropOverlay({ videoEl, crop, aspectRatio, onChange, onAp
     };
   }, [videoEl]);
 
-  // Re-apply aspect ratio whenever it changes.
   useEffect(() => {
     if (aspectRatio == null || !videoEl?.videoWidth) return;
     const next = applyAspectRatio(crop, aspectRatio, videoEl.videoWidth, videoEl.videoHeight);
     if (next.x !== crop.x || next.y !== crop.y || next.width !== crop.width || next.height !== crop.height) {
       onChange(next);
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [aspectRatio]);
 
   function applyAspectRatio(c: CropRect, ar: number, vw: number, vh: number): CropRect {
-    // ar is width/height in pixel space. Our normalized coords have width* vw / height*vh = ar.
-    // So height_norm = (width_norm * vw) / (vh * ar)
     let w = c.width;
     let h = (w * vw) / (vh * ar);
     if (h > 1) {
       h = 1;
       w = (h * vh * ar) / vw;
     }
-    // Center around current center.
     const cx = c.x + c.width / 2;
     const cy = c.y + c.height / 2;
     let x = clamp(cx - w / 2, 0, 1 - w);
@@ -130,7 +119,6 @@ export default function CropOverlay({ videoEl, crop, aspectRatio, onChange, onAp
       return;
     }
 
-    // resize
     let { x, y, width, height } = drag.orig;
     const handle = drag.handle;
     const minSize = 0.05;
@@ -150,8 +138,6 @@ export default function CropOverlay({ videoEl, crop, aspectRatio, onChange, onAp
     if (aspectRatio != null) {
       const vw = videoEl.videoWidth;
       const vh = videoEl.videoHeight;
-      // Recompute height from width to enforce aspect (width tends to be the active dimension).
-      // For corner handles this preserves the dragged width; for n/s handles reverse.
       if (handle === 'n' || handle === 's') {
         const newW = (height * vh * aspectRatio) / vw;
         if (handle === 'n') x = clamp(drag.orig.x + drag.orig.width / 2 - newW / 2, 0, 1 - newW);
@@ -162,7 +148,6 @@ export default function CropOverlay({ videoEl, crop, aspectRatio, onChange, onAp
         if (handle.includes('n')) y = clamp(drag.orig.y + drag.orig.height - newH, 0, 1 - newH);
         height = Math.min(newH, 1);
       }
-      // Clamp to bounds (shrink if overflow)
       if (x + width > 1) { width = 1 - x; height = (width * vw) / (vh * aspectRatio); }
       if (y + height > 1) { height = 1 - y; width = (height * vh * aspectRatio) / vw; }
     }
@@ -198,7 +183,6 @@ export default function CropOverlay({ videoEl, crop, aspectRatio, onChange, onAp
         zIndex: 5,
       }}
     >
-      {/* Dim outside */}
       <svg
         width="100%" height="100%"
         style={{ position: 'absolute', inset: 0, pointerEvents: 'none' }}
@@ -212,7 +196,6 @@ export default function CropOverlay({ videoEl, crop, aspectRatio, onChange, onAp
         <rect x="0" y="0" width="100%" height="100%" fill="rgba(0,0,0,0.30)" mask="url(#cropMask)" />
       </svg>
 
-      {/* Crop box */}
       <div
         onPointerDown={(e) => startDrag(e, { kind: 'move', startX: e.clientX, startY: e.clientY, orig: crop })}
         style={{
@@ -228,7 +211,6 @@ export default function CropOverlay({ videoEl, crop, aspectRatio, onChange, onAp
           pointerEvents: 'auto',
         }}
       >
-        {/* Rule-of-thirds grid */}
         <div style={{
           position: 'absolute', inset: 0,
           backgroundImage:
@@ -236,7 +218,6 @@ export default function CropOverlay({ videoEl, crop, aspectRatio, onChange, onAp
             'linear-gradient(to bottom, transparent 33.33%, rgba(255,255,255,0.4) 33.33%, rgba(255,255,255,0.4) calc(33.33% + 1px), transparent calc(33.33% + 1px), transparent 66.66%, rgba(255,255,255,0.4) 66.66%, rgba(255,255,255,0.4) calc(66.66% + 1px), transparent calc(66.66% + 1px))',
           pointerEvents: 'none',
         }} />
-        {/* Handles */}
         {HANDLES.map(h => (
           <div
             key={h}

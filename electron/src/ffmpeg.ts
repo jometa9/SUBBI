@@ -7,31 +7,26 @@ let cached: string | null = null;
 
 function bundledFfmpeg(): string | null {
   const exe = process.platform === 'win32' ? 'ffmpeg.exe' : 'ffmpeg';
-  // Production: extraResources copies the binary to <Resources>/ffmpeg/<exe>
   if (app.isPackaged) {
     const p = path.join(process.resourcesPath, 'ffmpeg', exe);
     return fs.existsSync(p) ? p : null;
   }
-  // Dev: resolve from ffmpeg-static in node_modules
   try {
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
     const ff = require('ffmpeg-static') as string | null;
     if (ff && fs.existsSync(ff)) return ff;
-  } catch { /* ignore */ }
+  } catch {}
   return null;
 }
 
 export function findFfmpeg(): string {
   if (cached) return cached;
 
-  // 1) Bundled binary (always preferred — guarantees a working ffmpeg)
   const bundled = bundledFfmpeg();
   if (bundled) {
     cached = bundled;
     return bundled;
   }
 
-  // 2) PATH
   try {
     const out = execSync(process.platform === 'win32' ? 'where ffmpeg' : 'which ffmpeg',
       { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
@@ -40,9 +35,8 @@ export function findFfmpeg(): string {
       cached = first;
       return first;
     }
-  } catch { /* ignore */ }
+  } catch {}
 
-  // 3) Common Windows install locations
   if (process.platform === 'win32') {
     const home = process.env.LOCALAPPDATA || '';
     const candidates: string[] = [];
@@ -51,7 +45,6 @@ export function findFfmpeg(): string {
       for (const d of fs.readdirSync(wingetRoot)) {
         if (d.toLowerCase().includes('ffmpeg')) {
           const pkgDir = path.join(wingetRoot, d);
-          // walk one level for ffmpeg-*-build/bin/ffmpeg.exe
           for (const sub of fs.readdirSync(pkgDir)) {
             const exe = path.join(pkgDir, sub, 'bin', 'ffmpeg.exe');
             if (fs.existsSync(exe)) candidates.push(exe);
@@ -72,7 +65,6 @@ export function findFfmpeg(): string {
   throw new Error('evt:err.engineMissing');
 }
 
-// Read total duration via ffprobe-less: parse from stderr "Duration: HH:MM:SS.ms"
 export function parseDurationFromStderr(stderr: string): number | null {
   const m = stderr.match(/Duration:\s*(\d+):(\d+):(\d+)[.,](\d+)/);
   if (!m) return null;
