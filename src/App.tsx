@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import SilenceTimeline, { type SilenceRegion, type SilenceTimelineHandle } from './SilenceTimeline';
 import CropOverlay, { type CropRect } from './CropOverlay';
 import Select from './Select';
@@ -34,7 +34,7 @@ const DEFAULT_STYLE: SubtitleStyle = {
   color: '#FFFFFF',
   outline: '#000000',
   outlineEnabled: true,
-  marginVPct: 8,
+  marginVPct: 25,
   marginHPct: 0,
   textCase: 'asis',
   maxWords: 4,
@@ -430,6 +430,12 @@ type ProjectState = {
   language: string;
   model: 'tiny' | 'medium' | 'large';
   splitMarkers?: number[];
+  currentTime?: number;
+  timelineZoom?: number;
+  previewZoom?: number;
+  volume?: number;
+  muted?: boolean;
+  playbackRate?: number;
 };
 
 const VIDEO_EXTENSIONS = ['mp4', 'mov', 'mkv', 'webm', 'avi', 'm4v'];
@@ -508,6 +514,7 @@ type PersistedSettings = {
   model?: 'tiny' | 'medium' | 'large';
   style?: SubtitleStyle;
   theme?: ThemePref;
+  openSections?: Record<string, boolean>;
 };
 
 function loadSettings(): PersistedSettings {
@@ -573,6 +580,25 @@ export default function App() {
     { time: number; clientX: number; topY: number } | null
   >(null);
   const previewVideoRef = useRef<HTMLVideoElement>(null);
+  const stageRef = useRef<HTMLDivElement | null>(null);
+  const stageRoRef = useRef<ResizeObserver | null>(null);
+  const [stageSize, setStageSize] = useState<{ w: number; h: number }>({ w: 0, h: 0 });
+  const setStageRef = useCallback((el: HTMLDivElement | null) => {
+    if (stageRef.current === el) return;
+    stageRef.current = el;
+    stageRoRef.current?.disconnect();
+    stageRoRef.current = null;
+    if (el) {
+      const update = () => {
+        const w = el.clientWidth, h = el.clientHeight;
+        setStageSize(prev => (prev.w === w && prev.h === h ? prev : { w, h }));
+      };
+      update();
+      const ro = new ResizeObserver(update);
+      ro.observe(el);
+      stageRoRef.current = ro;
+    }
+  }, []);
 
   // Width of the timeline scroll viewport — used to pick a tick spacing that
   // keeps the ruler from getting too dense or too sparse.
@@ -580,6 +606,7 @@ export default function App() {
 
   // Crop
   const [cropEnabled, setCropEnabled] = useState<boolean>(false);
+  const [cropEditing, setCropEditing] = useState<boolean>(false);
   const [crop, setCrop] = useState<CropRect>(DEFAULT_CROP);
   const [aspectId, setAspectId] = useState<string>('free');
 
@@ -695,19 +722,34 @@ export default function App() {
   const [muted, setMuted] = useState(false);
   const [playbackRate, setPlaybackRate] = useState(1);
   const [previewZoom, setPreviewZoom] = useState(1); // 1 = fit
-  const ZOOM_MIN = 0.25, ZOOM_MAX = 4;
-  const ZOOM_STEPS = [0.25, 0.5, 0.75, 1, 1.25, 1.5, 2, 3, 4];
+  const ZOOM_MIN = 0.05, ZOOM_MAX = 8;
 
+  function getFitScale(): number {
+    const v = videoRef.current;
+    const vw = v?.videoWidth || 0;
+    const vh = v?.videoHeight || 0;
+    const sw = stageRef.current?.clientWidth || 0;
+    const sh = stageRef.current?.clientHeight || 0;
+    if (!vw || !vh || !sw || !sh) return 1;
+    return Math.min(sw / vw, sh / vh);
+  }
   function zoomIn() {
     setPreviewZoom(z => {
-      const next = ZOOM_STEPS.find(s => s > z + 0.001);
-      return next ?? ZOOM_MAX;
+      const fit = getFitScale();
+      const curPct = Math.round(fit * z * 100);
+      const nextPct = Math.floor(curPct / 10) * 10 + 10;
+      const nextZoom = (nextPct / 100) / fit;
+      return Math.min(ZOOM_MAX, nextZoom);
     });
   }
   function zoomOut() {
     setPreviewZoom(z => {
-      const next = [...ZOOM_STEPS].reverse().find(s => s < z - 0.001);
-      return next ?? ZOOM_MIN;
+      const fit = getFitScale();
+      const curPct = Math.round(fit * z * 100);
+      const nextPct = Math.ceil(curPct / 10) * 10 - 10;
+      if (nextPct <= 0) return Math.max(ZOOM_MIN, z / 2);
+      const nextZoom = (nextPct / 100) / fit;
+      return Math.max(ZOOM_MIN, nextZoom);
     });
   }
   function zoomFit() { setPreviewZoom(1); }
@@ -722,11 +764,12 @@ export default function App() {
   // Collapsible sidebar sections
   const [openSections, setOpenSections] = useState<Record<string, boolean>>({
     crop: true, silence: true, audio: true, transcription: true, style: true,
+    ...(initial.openSections ?? {}),
   });
   const toggleSection = (id: string) =>
     setOpenSections(s => ({ ...s, [id]: !s[id] }));
 
-  useEffect(() => { saveSettings({ uiLang, language, model, style, theme: themePref }); }, [uiLang, language, model, style, themePref]);
+  useEffect(() => { saveSettings({ uiLang, language, model, style, theme: themePref, openSections }); }, [uiLang, language, model, style, themePref, openSections]);
 
   useEffect(() => {
     const next = resolveTheme(themePref);
@@ -816,7 +859,22 @@ export default function App() {
     const onTime = () => setCurrentTime(v.currentTime);
     const onPlay = () => setIsPlaying(true);
     const onPause = () => setIsPlaying(false);
-    const onMeta = () => { if (v.duration && isFinite(v.duration)) setVideoDuration(d => d || v.duration); };
+    const onMeta = () => {
+      if (v.duration && isFinite(v.duration)) setVideoDuration(d => d || v.duration);
+      const p = pendingPlaybackRef.current;
+      if (p) {
+        try {
+          if (typeof p.volume === 'number') v.volume = Math.max(0, Math.min(1, p.volume));
+          if (typeof p.muted === 'boolean') v.muted = p.muted;
+          if (typeof p.playbackRate === 'number') v.playbackRate = p.playbackRate;
+          if (typeof p.currentTime === 'number' && isFinite(p.currentTime)) {
+            const t = Math.max(0, Math.min((v.duration || p.currentTime + 1) - 0.05, p.currentTime));
+            v.currentTime = t;
+          }
+        } catch { /* ignore */ }
+        pendingPlaybackRef.current = null;
+      }
+    };
     const onVol = () => { setVolume(v.volume); setMuted(v.muted); };
     v.addEventListener('timeupdate', onTime);
     v.addEventListener('play', onPlay);
@@ -938,6 +996,8 @@ export default function App() {
   // Tracks whether the load just happened so the autosave effect doesn't immediately
   // re-write the freshly-restored state (which would be a no-op but adds noise).
   const justLoadedRef = useRef(false);
+  // Pending restored playback state to apply once the video element is ready.
+  const pendingPlaybackRef = useRef<{ currentTime?: number; volume?: number; muted?: boolean; playbackRate?: number } | null>(null);
   const [autosaveTick, setAutosaveTick] = useState<'idle' | 'saved'>('idle');
   const [storageStats, setStorageStats] = useState<{ total: number; others: number; count: number; othersCount: number }>(
     () => autosaveStats(null)
@@ -965,6 +1025,7 @@ export default function App() {
         cropEnabled, crop, aspectId, volumeDb, noiseGateDb, noiseGateEnabled,
         srtPath, rawCues, style, language, model,
         splitMarkers,
+        currentTime, timelineZoom, previewZoom, volume, muted, playbackRate,
       });
     }
     setVideoPath(filePath);
@@ -994,6 +1055,18 @@ export default function App() {
       if (saved.style) setStyle({ ...DEFAULT_STYLE, ...saved.style });
       if (saved.language) setLanguage(saved.language);
       if (saved.model) setModel(saved.model);
+      if (typeof saved.timelineZoom === 'number') setTimelineZoom(saved.timelineZoom);
+      if (typeof saved.previewZoom === 'number') setPreviewZoom(saved.previewZoom);
+      if (typeof saved.currentTime === 'number') setCurrentTime(saved.currentTime);
+      if (typeof saved.volume === 'number') setVolume(saved.volume);
+      if (typeof saved.muted === 'boolean') setMuted(saved.muted);
+      if (typeof saved.playbackRate === 'number') setPlaybackRate(saved.playbackRate);
+      pendingPlaybackRef.current = {
+        currentTime: saved.currentTime,
+        volume: saved.volume,
+        muted: saved.muted,
+        playbackRate: saved.playbackRate,
+      };
     } else {
       setSilenceRegions([]);
       setMeanVolumeDb(null);
@@ -1006,6 +1079,10 @@ export default function App() {
       setNoiseGateDb(-40);
       setNoiseGateEnabled(false);
       setSplitMarkers([]);
+      setCurrentTime(0);
+      setTimelineZoom(1);
+      setPreviewZoom(1);
+      pendingPlaybackRef.current = null;
     }
     setSelectedMarker(null);
   }
@@ -1020,6 +1097,7 @@ export default function App() {
         cropEnabled, crop, aspectId, volumeDb, noiseGateDb, noiseGateEnabled,
         srtPath, rawCues, style, language, model,
         splitMarkers,
+        currentTime, timelineZoom, previewZoom, volume, muted, playbackRate,
       });
       setAutosaveTick('saved');
       setStorageStats(autosaveStats(videoPath));
@@ -1030,7 +1108,8 @@ export default function App() {
   }, [videoPath, silenceRegions, thresholdDb, autoThreshold, meanVolumeDb, minSilenceDur,
       cropEnabled, crop, aspectId, volumeDb, noiseGateDb, noiseGateEnabled,
       srtPath, rawCues, style, language, model,
-      splitMarkers]);
+      splitMarkers,
+      currentTime, timelineZoom, previewZoom, volume, muted, playbackRate]);
 
   useEffect(() => {
     if (!videoPath) return;
@@ -1219,7 +1298,7 @@ export default function App() {
     left: `${style.marginHPct}%`,
     right: `${-style.marginHPct}%`,
     fontFamily: style.fontName,
-    fontSize: `${style.fontSize}px`,
+    fontSize: `${style.fontSize * previewZoom}px`,
     color: style.color,
     fontWeight: 700,
     ['--outline' as any]: style.outlineEnabled ? style.outline : 'transparent',
@@ -1290,6 +1369,7 @@ export default function App() {
     setCrop(next);
     setAspectId('free');
     setCropEnabled(true);
+    setCropEditing(true);
   }
 
   // Major ruler ticks (with label) and minor ticks (5 subdivisions per major).
@@ -1454,7 +1534,15 @@ export default function App() {
               <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><rect x="5" y="11" width="14" height="2"/></svg>
             </button>
             <button className="vc-zoom-label" onClick={zoomFit} title="Fit (Ctrl 0)">
-              {Math.round(previewZoom * 100)}%
+              {previewZoom === 1
+                ? 'Fit'
+                : (() => {
+                    const vw = videoRef.current?.videoWidth || 0;
+                    const vh = videoRef.current?.videoHeight || 0;
+                    if (!vw || !vh || !stageSize.w || !stageSize.h) return `${Math.round(previewZoom * 100)}%`;
+                    const fit = Math.min(stageSize.w / vw, stageSize.h / vh);
+                    return `${Math.round(fit * previewZoom * 100)}%`;
+                  })()}
             </button>
             <button className="vc-btn" onClick={zoomIn} title="Zoom in (Ctrl +)" disabled={previewZoom >= ZOOM_MAX}>
               <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><rect x="5" y="11" width="14" height="2"/><rect x="11" y="5" width="2" height="14"/></svg>
@@ -1495,20 +1583,57 @@ export default function App() {
             />
           </div>
         )}
-        {videoUrl && (
-          <div className="video-stage">
+        {videoUrl && (() => {
+          const cropApplied = cropEnabled && !cropEditing && videoW > 0 && videoH > 0;
+          let croppedWrapW = 0, croppedWrapH = 0;
+          if (cropApplied && stageSize.w > 0 && stageSize.h > 0) {
+            const sliceAspect = (crop.width * videoW) / (crop.height * videoH);
+            const stageAspect = stageSize.w / stageSize.h;
+            if (sliceAspect > stageAspect) {
+              croppedWrapW = stageSize.w;
+              croppedWrapH = stageSize.w / sliceAspect;
+            } else {
+              croppedWrapH = stageSize.h;
+              croppedWrapW = stageSize.h * sliceAspect;
+            }
+          }
+          const baseW = videoRef.current?.videoWidth || 1280;
+          const baseH = videoRef.current?.videoHeight || 720;
+          const wrapStyle: React.CSSProperties | undefined = previewZoom !== 1
+            ? (cropApplied
+                ? {
+                    width: `${baseW * crop.width * previewZoom}px`,
+                    height: `${baseH * crop.height * previewZoom}px`,
+                    overflow: 'hidden',
+                  }
+                : {
+                    width: `${baseW * previewZoom}px`,
+                    height: `${baseH * previewZoom}px`,
+                  })
+            : (cropApplied && croppedWrapW > 0
+                ? { width: `${croppedWrapW}px`, height: `${croppedWrapH}px`, overflow: 'hidden' }
+                : undefined);
+          const videoStyle: React.CSSProperties | undefined = cropApplied ? {
+            position: 'absolute',
+            top: `${-crop.y * 100 / crop.height}%`,
+            left: `${-crop.x * 100 / crop.width}%`,
+            width: `${100 / crop.width}%`,
+            height: `${100 / crop.height}%`,
+            maxWidth: 'none',
+            maxHeight: 'none',
+          } : undefined;
+          return (
+          <div className="video-stage" ref={setStageRef}>
             <div
-              className={'video-wrap' + (previewZoom !== 1 ? ' is-zoomed' : '')}
-              style={previewZoom !== 1 ? {
-                width: `${(videoRef.current?.videoWidth || 1280) * previewZoom}px`,
-                height: `${(videoRef.current?.videoHeight || 720) * previewZoom}px`,
-              } : undefined}
+              className={'video-wrap' + (previewZoom !== 1 ? ' is-zoomed' : '') + (cropApplied ? ' is-cropped' : '')}
+              style={wrapStyle}
             >
               <video
                 ref={videoRef}
                 src={videoUrl}
                 onClick={togglePlay}
                 onLoadedMetadata={() => bumpVideoEl(n => n + 1)}
+                style={videoStyle}
               />
               <div
                 className={
@@ -1546,7 +1671,7 @@ export default function App() {
                     onClick={(e) => e.stopPropagation()}
                     style={{
                       fontFamily: style.fontName,
-                      fontSize: `${style.fontSize}px`,
+                      fontSize: `${style.fontSize * previewZoom}px`,
                       color: style.color,
                       fontWeight: 700,
                       textAlign: 'center',
@@ -1556,17 +1681,20 @@ export default function App() {
                   previewText
                 )}
               </div>
-              {cropEnabled && (
+              {cropEnabled && cropEditing && (
                 <CropOverlay
                   videoEl={videoRef.current}
                   crop={crop}
                   aspectRatio={aspectRatio}
                   onChange={setCrop}
+                  onApply={() => setCropEditing(false)}
+                  onUserResize={() => setAspectId('free')}
                 />
               )}
             </div>
           </div>
-        )}
+          );
+        })()}
         {videoUrl && (
           <div className="video-controls">
             <button
@@ -1831,6 +1959,7 @@ export default function App() {
                     onClick={() => {
                       setAspectId(p.id);
                       setCropEnabled(true);
+                      setCropEditing(true);
                     }}
                     className={'pr-chip' + (cropEnabled && aspectId === p.id ? ' pr-chip-on' : '')}
                   >{p.id === 'free' ? t('aspectFree') : p.label}</button>
@@ -1882,15 +2011,53 @@ export default function App() {
                 </label>
               </div>
             </div>
+            <div className="pr-row">
+              <span className="pr-label">Center</span>
+              <div className="pr-aspect-row">
+                <button
+                  type="button"
+                  className="pr-chip"
+                  disabled={!videoPath || isBusy}
+                  title="Center horizontally"
+                  onClick={() => setCrop(c => ({ ...c, x: (1 - c.width) / 2 }))}
+                >
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="3" x2="12" y2="21"/><polyline points="6 9 3 12 6 15"/><polyline points="18 9 21 12 18 15"/></svg>
+                </button>
+                <button
+                  type="button"
+                  className="pr-chip"
+                  disabled={!videoPath || isBusy}
+                  title="Center vertically"
+                  onClick={() => setCrop(c => ({ ...c, y: (1 - c.height) / 2 }))}
+                >
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="3" y1="12" x2="21" y2="12"/><polyline points="9 6 12 3 15 6"/><polyline points="9 18 12 21 15 18"/></svg>
+                </button>
+                <button
+                  type="button"
+                  className="pr-chip"
+                  disabled={!videoPath || isBusy}
+                  title="Center both"
+                  onClick={() => setCrop(c => ({ ...c, x: (1 - c.width) / 2, y: (1 - c.height) / 2 }))}
+                >
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="3"/><line x1="12" y1="3" x2="12" y2="7"/><line x1="12" y1="17" x2="12" y2="21"/><line x1="3" y1="12" x2="7" y2="12"/><line x1="17" y1="12" x2="21" y2="12"/></svg>
+                </button>
+              </div>
+            </div>
             <div className="pr-row pr-row-end">
               <button
-                onClick={() => { setCrop(DEFAULT_CROP); setAspectId('free'); setCropEnabled(true); }}
+                onClick={() => { setCrop(DEFAULT_CROP); setAspectId('free'); setCropEnabled(true); setCropEditing(true); }}
                 disabled={!videoPath || isBusy}
                 className="pr-btn pr-btn-ghost">
                 {t('resetCrop')}
               </button>
               <button
-                onClick={() => setCropEnabled(false)}
+                onClick={() => setCropEditing(v => !v)}
+                disabled={!cropEnabled || isBusy}
+                className="pr-btn pr-btn-ghost">
+                {cropEditing ? 'Apply' : 'Edit'}
+              </button>
+              <button
+                onClick={() => { setCropEnabled(false); setCropEditing(false); }}
                 disabled={!cropEnabled || isBusy}
                 className="pr-btn pr-btn-ghost">
                 {t('disableCrop')}
@@ -2084,19 +2251,81 @@ export default function App() {
             </div>
             <div className="pr-row">
               <span className="pr-label">{t('vertical')}</span>
-              <input type="range" min={0} max={45} value={style.marginVPct}
+              <input type="range" min={0} max={100} value={style.marginVPct}
                      onChange={e => setStyle(s => ({ ...s, marginVPct: +e.target.value }))}
-                     style={rangePct(style.marginVPct, 0, 45)}
+                     style={rangePct(style.marginVPct, 0, 100)}
                      className="pr-range pr-range-flex" />
               <span className="pr-value">{style.marginVPct}%</span>
             </div>
             <div className="pr-row">
               <span className="pr-label">{t('horizontal')}</span>
-              <input type="range" min={-40} max={40} value={style.marginHPct}
+              <input type="range" min={-50} max={50} value={style.marginHPct}
                      onChange={e => setStyle(s => ({ ...s, marginHPct: +e.target.value }))}
-                     style={rangePct(style.marginHPct, -40, 40)}
+                     style={rangePct(style.marginHPct, -50, 50)}
                      className="pr-range pr-range-flex" />
               <span className="pr-value">{style.marginHPct > 0 ? '+' : ''}{style.marginHPct}%</span>
+            </div>
+            <div className="pr-row pr-crop-px-row">
+              <span className="pr-label">{t('cropPixels')}</span>
+              <div className="pr-crop-px-grid">
+                <label className="pr-crop-px-cell">
+                  <span className="pr-crop-px-key">{t('cropX')}</span>
+                  <input
+                    type="number" step={1}
+                    value={videoW ? Math.round(style.marginHPct / 100 * videoW) : 0}
+                    disabled={!videoPath || !videoW || isBusy}
+                    onChange={(e) => {
+                      if (!videoW) return;
+                      const px = Math.max(-videoW / 2, Math.min(videoW / 2, +e.target.value || 0));
+                      setStyle(s => ({ ...s, marginHPct: +(px / videoW * 100).toFixed(2) }));
+                    }}
+                    className="pr-input pr-crop-px-input"
+                  />
+                </label>
+                <label className="pr-crop-px-cell">
+                  <span className="pr-crop-px-key">{t('cropY')}</span>
+                  <input
+                    type="number" min={0} step={1}
+                    value={videoH ? Math.round(style.marginVPct / 100 * videoH) : 0}
+                    disabled={!videoPath || !videoH || isBusy}
+                    onChange={(e) => {
+                      if (!videoH) return;
+                      const px = Math.max(0, Math.min(videoH, +e.target.value || 0));
+                      setStyle(s => ({ ...s, marginVPct: +(px / videoH * 100).toFixed(2) }));
+                    }}
+                    className="pr-input pr-crop-px-input"
+                  />
+                </label>
+              </div>
+            </div>
+            <div className="pr-row">
+              <span className="pr-label">Center</span>
+              <div className="pr-aspect-row">
+                <button
+                  type="button"
+                  className="pr-chip"
+                  title="Center horizontally"
+                  onClick={() => setStyle(s => ({ ...s, marginHPct: 0 }))}
+                >
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="3" x2="12" y2="21"/><polyline points="6 9 3 12 6 15"/><polyline points="18 9 21 12 18 15"/></svg>
+                </button>
+                <button
+                  type="button"
+                  className="pr-chip"
+                  title="Center vertically"
+                  onClick={() => setStyle(s => ({ ...s, marginVPct: 50 }))}
+                >
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="3" y1="12" x2="21" y2="12"/><polyline points="9 6 12 3 15 6"/><polyline points="9 18 12 21 15 18"/></svg>
+                </button>
+                <button
+                  type="button"
+                  className="pr-chip"
+                  title="Center both"
+                  onClick={() => setStyle(s => ({ ...s, marginHPct: 0, marginVPct: 50 }))}
+                >
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="3"/><line x1="12" y1="3" x2="12" y2="7"/><line x1="12" y1="17" x2="12" y2="21"/><line x1="3" y1="12" x2="7" y2="12"/><line x1="17" y1="12" x2="21" y2="12"/></svg>
+                </button>
+              </div>
             </div>
             <div className="pr-row">
               <span className="pr-label">{t('color')}</span>

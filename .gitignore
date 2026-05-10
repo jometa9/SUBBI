@@ -1,14 +1,69 @@
-node_modules
-dist
-build
-release
-electron/dist
-.DS_Store
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+build/
+release/
+out/
+electron/dist/
+*.tsbuildinfo
+
+# Logs
 *.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+logs/
+
+# OS files
+.DS_Store
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+
+# Editor/IDE
+.vscode/*
+!.vscode/settings.json
+!.vscode/extensions.json
+.idea/
+*.swp
+*.swo
+*~
+
+# Env / secrets
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# Cache
+.cache/
+.parcel-cache/
+.vite/
+.turbo/
+.eslintcache
+.stylelintcache
+
+# Coverage / tests
+coverage/
+*.lcov
+.nyc_output/
+
+# Whisper model binaries and native libs
 resources/whisper/*.dat
 resources/whisper/*.bin
+resources/whisper/*.bin.part
 resources/whisper/**/*.dylib
 resources/whisper/**/*.dll
 resources/whisper/**/*.so
 resources/whisper/**/whisper-cli
 resources/whisper/**/whisper-cli.exe
+
+# Temp / partial downloads
+*.part
+*.tmp
+*.temp
