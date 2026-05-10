@@ -1790,12 +1790,12 @@ export default function App() {
                 >N</button>
                 <input
                   type="range"
-                  min={-60} max={-1} step={1}
+                  min={-80} max={-20} step={1}
                   value={noiseGateDb}
                   disabled={!videoPath || isBusy || !noiseGateEnabled}
                   onChange={e => setNoiseGateDb(+e.target.value)}
                   className="pr-range pr-range-v"
-                  style={rangePct(noiseGateDb, -60, -1)}
+                  style={rangePct(noiseGateDb, -80, -20)}
                 />
                 <span className="audio-fader-num">
                   {noiseGateEnabled ? noiseGateDb : '–'}
@@ -1995,10 +1995,10 @@ export default function App() {
             </div>
             <div className="pr-row">
               <span className="pr-label">{t('threshold')}</span>
-              <input type="range" min={-60} max={-1} step={1} value={noiseGateDb}
+              <input type="range" min={-80} max={-20} step={1} value={noiseGateDb}
                      disabled={!videoPath || isBusy || !noiseGateEnabled}
                      onChange={e => setNoiseGateDb(+e.target.value)}
-                     style={rangePct(noiseGateDb, -60, -1)}
+                     style={rangePct(noiseGateDb, -80, -20)}
                      className="pr-range pr-range-flex" />
               <span className="pr-value">
                 {noiseGateEnabled ? `${noiseGateDb} dB` : t('audioGateOff')}

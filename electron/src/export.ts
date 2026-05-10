@@ -220,10 +220,11 @@ export async function exportVideo(
     audioSourceLabel = '[avol]';
   }
   if (wantsGate) {
-    // agate threshold is linear (0..1). Convert from dB.
-    const linear = Math.min(0.999, Math.max(0.0001, Math.pow(10, gateDb! / 20)));
+    // Spectral denoiser: removes noise below the floor, leaves voice/peaks above untouched.
+    // afftdn nf (noise floor) accepts -80..-20 dB.
+    const nf = Math.min(-20, Math.max(-80, gateDb!));
     filterParts.push(
-      `${audioSourceLabel}agate=threshold=${linear.toFixed(5)}:ratio=20:attack=5:release=120:detection=rms[agate]`
+      `${audioSourceLabel}afftdn=nf=${nf.toFixed(1)}:nr=12[agate]`
     );
     audioSourceLabel = '[agate]';
   }
