@@ -98,6 +98,7 @@ const TRANSLATIONS: Record<UiLang, Record<string, string>> = {
     pillSilence: 'SILENCE',
     pillSubs: 'SUBS',
     pillCrop: 'CROP',
+    pillAudio: 'AUDIO',
     aspectFree: 'Free',
     pause: 'Pause',
     play: 'Play',
@@ -156,6 +157,7 @@ const TRANSLATIONS: Record<UiLang, Record<string, string>> = {
     pillSilence: 'SILENCIO',
     pillSubs: 'SUBS',
     pillCrop: 'RECORTE',
+    pillAudio: 'AUDIO',
     aspectFree: 'Libre',
     pause: 'Pausar',
     play: 'Reproducir',
@@ -235,6 +237,41 @@ function fmtTime(sec: number): string {
 }
 
 const STORAGE_KEY = 'subbi:settings:v2';
+const PROJECT_PREFIX = 'subbi:proj:v1:';
+
+type ProjectState = {
+  silenceRegions: SilenceRegion[];
+  thresholdDb: number;
+  autoThreshold: boolean;
+  meanVolumeDb: number | null;
+  minSilenceDur: number;
+  cropEnabled: boolean;
+  crop: CropRect;
+  aspectId: string;
+  volumeDb: number;
+  srtPath: string | null;
+  rawCues: Cue[] | null;
+  style: SubtitleStyle;
+  language: string;
+  model: 'tiny' | 'medium' | 'large';
+};
+
+function projectKey(videoPath: string): string {
+  return PROJECT_PREFIX + videoPath;
+}
+
+function loadProject(videoPath: string): ProjectState | null {
+  try {
+    const raw = localStorage.getItem(projectKey(videoPath));
+    if (!raw) return null;
+    const p = JSON.parse(raw);
+    return p && typeof p === 'object' ? p as ProjectState : null;
+  } catch { return null; }
+}
+
+function saveProject(videoPath: string, state: ProjectState) {
+  try { localStorage.setItem(projectKey(videoPath), JSON.stringify(state)); } catch {}
+}
 
 type PersistedSettings = {
   uiLang?: UiLang;
@@ -296,6 +333,31 @@ export default function App() {
   const [isPlaying, setIsPlaying] = useState(false);
   const [volume, setVolume] = useState(1);
   const [muted, setMuted] = useState(false);
+  const [playbackRate, setPlaybackRate] = useState(1);
+  const [previewZoom, setPreviewZoom] = useState(1); // 1 = fit
+  const ZOOM_MIN = 0.25, ZOOM_MAX = 4;
+  const ZOOM_STEPS = [0.25, 0.5, 0.75, 1, 1.25, 1.5, 2, 3, 4];
+
+  function zoomIn() {
+    setPreviewZoom(z => {
+      const next = ZOOM_STEPS.find(s => s > z + 0.001);
+      return next ?? ZOOM_MAX;
+    });
+  }
+  function zoomOut() {
+    setPreviewZoom(z => {
+      const next = [...ZOOM_STEPS].reverse().find(s => s < z - 0.001);
+      return next ?? ZOOM_MIN;
+    });
+  }
+  function zoomFit() { setPreviewZoom(1); }
+  function zoomActual() {
+    const v = videoRef.current;
+    if (!v?.videoWidth || !v.parentElement) { setPreviewZoom(1); return; }
+    const stage = v.parentElement;
+    const fitW = Math.min(v.videoWidth, stage.clientWidth);
+    setPreviewZoom(v.videoWidth / fitW);
+  }
 
   // Collapsible sidebar sections
   const [openSections, setOpenSections] = useState<Record<string, boolean>>({
@@ -305,6 +367,35 @@ export default function App() {
     setOpenSections(s => ({ ...s, [id]: !s[id] }));
 
   useEffect(() => { saveSettings({ uiLang, language, model, style }); }, [uiLang, language, model, style]);
+
+  // Block context menu, refresh shortcuts and devtools shortcuts at the renderer level too.
+  useEffect(() => {
+    const onContextMenu = (e: MouseEvent) => e.preventDefault();
+    const onKey = (e: KeyboardEvent) => {
+      const k = e.key.toLowerCase();
+      const ctrlOrMeta = e.ctrlKey || e.metaKey;
+      if (k === 'f5' || (ctrlOrMeta && k === 'r')) { e.preventDefault(); return; }
+      if (k === 'f12') { e.preventDefault(); return; }
+      if (ctrlOrMeta && e.shiftKey && (k === 'i' || k === 'j' || k === 'c')) { e.preventDefault(); return; }
+      if (ctrlOrMeta && k === 'u') { e.preventDefault(); return; }
+    };
+    const onSelectStart = (e: Event) => {
+      const tag = (e.target as HTMLElement)?.tagName;
+      if (tag === 'INPUT' || tag === 'TEXTAREA') return;
+      const el = e.target as HTMLElement | null;
+      if (el && el.isContentEditable) return;
+      e.preventDefault();
+    };
+    window.addEventListener('contextmenu', onContextMenu);
+    window.addEventListener('keydown', onKey, { capture: true });
+    document.addEventListener('selectstart', onSelectStart);
+    return () => {
+      window.removeEventListener('contextmenu', onContextMenu);
+      window.removeEventListener('keydown', onKey, { capture: true } as any);
+      document.removeEventListener('selectstart', onSelectStart);
+    };
+  }, []);
+
   const t = (k: keyof typeof TRANSLATIONS['en']) => TRANSLATIONS[uiLang][k] ?? TRANSLATIONS.en[k];
   const videoRef = useRef<HTMLVideoElement>(null);
   const [, bumpVideoEl] = useState(0);
@@ -348,6 +439,12 @@ export default function App() {
     else v.pause();
   }
 
+  // Apply playback rate whenever it changes or video reloads.
+  useEffect(() => {
+    const v = videoRef.current;
+    if (v) v.playbackRate = playbackRate;
+  }, [playbackRate, videoUrl]);
+
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
       if (!videoUrl) return;
@@ -358,6 +455,9 @@ export default function App() {
         const v = videoRef.current; if (v) v.muted = !v.muted;
       } else if (e.key === 'ArrowLeft') { e.preventDefault(); seekTo((videoRef.current?.currentTime ?? 0) - 5); }
       else if (e.key === 'ArrowRight') { e.preventDefault(); seekTo((videoRef.current?.currentTime ?? 0) + 5); }
+      else if ((e.ctrlKey || e.metaKey) && (e.key === '=' || e.key === '+')) { e.preventDefault(); zoomIn(); }
+      else if ((e.ctrlKey || e.metaKey) && e.key === '-') { e.preventDefault(); zoomOut(); }
+      else if ((e.ctrlKey || e.metaKey) && e.key === '0') { e.preventDefault(); zoomFit(); }
     }
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
@@ -381,21 +481,64 @@ export default function App() {
     return off;
   }, []);
 
+  // Tracks whether the load just happened so the autosave effect doesn't immediately
+  // re-write the freshly-restored state (which would be a no-op but adds noise).
+  const justLoadedRef = useRef(false);
+  const [autosaveTick, setAutosaveTick] = useState<'idle' | 'saved'>('idle');
+
   function loadVideo(filePath: string) {
     setVideoPath(filePath);
     setVideoUrl('file:///' + filePath.replace(/\\/g, '/'));
     setProc({ phase: 'idle' });
-    setSilenceRegions([]);
-    setMeanVolumeDb(null);
     setVideoDuration(0);
     setPeaks(null);
-    setSrtPath(null);
-    setRawCues(null);
-    setCropEnabled(false);
-    setCrop(DEFAULT_CROP);
-    setAspectId('free');
-    setVolumeDb(0);
+
+    const saved = loadProject(filePath);
+    justLoadedRef.current = true;
+    if (saved) {
+      setSilenceRegions(saved.silenceRegions ?? []);
+      setThresholdDb(saved.thresholdDb ?? -30);
+      setAutoThreshold(saved.autoThreshold ?? true);
+      setMeanVolumeDb(saved.meanVolumeDb ?? null);
+      setMinSilenceDur(saved.minSilenceDur ?? 0.5);
+      setCropEnabled(saved.cropEnabled ?? false);
+      setCrop(saved.crop ?? DEFAULT_CROP);
+      setAspectId(saved.aspectId ?? 'free');
+      setVolumeDb(saved.volumeDb ?? 0);
+      setSrtPath(saved.srtPath ?? null);
+      setRawCues(saved.rawCues ?? null);
+      if (saved.style) setStyle(saved.style);
+      if (saved.language) setLanguage(saved.language);
+      if (saved.model) setModel(saved.model);
+    } else {
+      setSilenceRegions([]);
+      setMeanVolumeDb(null);
+      setSrtPath(null);
+      setRawCues(null);
+      setCropEnabled(false);
+      setCrop(DEFAULT_CROP);
+      setAspectId('free');
+      setVolumeDb(0);
+    }
   }
+
+  // Autosave: persist the current edit state for this video (debounced).
+  useEffect(() => {
+    if (!videoPath) return;
+    if (justLoadedRef.current) { justLoadedRef.current = false; return; }
+    const handle = setTimeout(() => {
+      saveProject(videoPath, {
+        silenceRegions, thresholdDb, autoThreshold, meanVolumeDb, minSilenceDur,
+        cropEnabled, crop, aspectId, volumeDb,
+        srtPath, rawCues, style, language, model,
+      });
+      setAutosaveTick('saved');
+      const t = setTimeout(() => setAutosaveTick('idle'), 1200);
+      return () => clearTimeout(t);
+    }, 400);
+    return () => clearTimeout(handle);
+  }, [videoPath, silenceRegions, thresholdDb, autoThreshold, meanVolumeDb, minSilenceDur,
+      cropEnabled, crop, aspectId, volumeDb, srtPath, rawCues, style, language, model]);
 
   useEffect(() => {
     if (!videoPath) return;
@@ -552,6 +695,11 @@ export default function App() {
         <span className="app-titlebar-doc">
           {videoPath ? videoPath.split(/[\\/]/).pop() : t('untitledProject')}
         </span>
+        {videoPath && (
+          <span className={'app-titlebar-save' + (autosaveTick === 'saved' ? ' is-pulse' : '')}>
+            {autosaveTick === 'saved' ? '● Saved' : '○ Auto'}
+          </span>
+        )}
         <select value={uiLang} onChange={e => setUiLang(e.target.value as UiLang)} className="app-titlebar-lang no-drag">
           <option value="en">EN</option>
           <option value="es">ES</option>
@@ -570,24 +718,63 @@ export default function App() {
           </label>
         )}
         {videoUrl && (
-          <div className="video-wrap">
-            <video
-              ref={videoRef}
-              src={videoUrl}
-              onClick={togglePlay}
-              onLoadedMetadata={() => bumpVideoEl(n => n + 1)}
-            />
-            <div className={'subtitle-overlay' + (activeCue ? '' : ' sample')} style={overlayStyle}>
-              {previewText}
-            </div>
-            {cropEnabled && (
-              <CropOverlay
-                videoEl={videoRef.current}
-                crop={crop}
-                aspectRatio={aspectRatio}
-                onChange={setCrop}
+          <div className="preview-toolbar">
+            <button className="vc-btn" onClick={zoomOut} title="Zoom out (Ctrl −)" disabled={previewZoom <= ZOOM_MIN}>
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><rect x="5" y="11" width="14" height="2"/></svg>
+            </button>
+            <button className="vc-zoom-label" onClick={zoomFit} title="Fit (Ctrl 0)">
+              {Math.round(previewZoom * 100)}%
+            </button>
+            <button className="vc-btn" onClick={zoomIn} title="Zoom in (Ctrl +)" disabled={previewZoom >= ZOOM_MAX}>
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><rect x="5" y="11" width="14" height="2"/><rect x="11" y="5" width="2" height="14"/></svg>
+            </button>
+            <button className="pr-btn pr-btn-ghost vc-fit-btn" onClick={zoomFit} title="Fit (Ctrl 0)">Fit</button>
+            <button className="pr-btn pr-btn-ghost vc-fit-btn" onClick={zoomActual} title="Actual pixels (100%)">1:1</button>
+            <span className="vc-spacer" />
+            <span className="vc-toolbar-label">Speed</span>
+            <select
+              className="pr-input vc-speed"
+              value={playbackRate}
+              onChange={e => setPlaybackRate(+e.target.value)}
+              title="Playback speed"
+            >
+              <option value={0.25}>0.25×</option>
+              <option value={0.5}>0.5×</option>
+              <option value={0.75}>0.75×</option>
+              <option value={1}>1×</option>
+              <option value={1.25}>1.25×</option>
+              <option value={1.5}>1.5×</option>
+              <option value={2}>2×</option>
+            </select>
+          </div>
+        )}
+        {videoUrl && (
+          <div className="video-stage">
+            <div
+              className={'video-wrap' + (previewZoom !== 1 ? ' is-zoomed' : '')}
+              style={previewZoom !== 1 ? {
+                width: `${(videoRef.current?.videoWidth || 1280) * previewZoom}px`,
+                height: `${(videoRef.current?.videoHeight || 720) * previewZoom}px`,
+              } : undefined}
+            >
+              <video
+                ref={videoRef}
+                src={videoUrl}
+                onClick={togglePlay}
+                onLoadedMetadata={() => bumpVideoEl(n => n + 1)}
               />
-            )}
+              <div className={'subtitle-overlay' + (activeCue ? '' : ' sample')} style={overlayStyle}>
+                {previewText}
+              </div>
+              {cropEnabled && (
+                <CropOverlay
+                  videoEl={videoRef.current}
+                  crop={crop}
+                  aspectRatio={aspectRatio}
+                  onChange={setCrop}
+                />
+              )}
+            </div>
           </div>
         )}
         {videoUrl && (
@@ -716,7 +903,7 @@ export default function App() {
                     disabled={!cropEnabled || isBusy}
                     onClick={() => setAspectId(p.id)}
                     className={'pr-chip' + (aspectId === p.id ? ' pr-chip-on' : '')}
-                  >{p.label}</button>
+                  >{p.id === 'free' ? t('aspectFree') : p.label}</button>
                 ))}
               </div>
             </div>
@@ -809,8 +996,8 @@ export default function App() {
         <div className={'pr-section' + (openSections.transcription ? ' is-open' : ' is-closed')}>
           <button className="pr-section-head" onClick={() => toggleSection('transcription')} type="button">
             <span className="pr-section-chev" />
-            <span className="pr-section-title">Transcription</span>
-            {cues && <span className="pr-badge">{cues.length} cues</span>}
+            <span className="pr-section-title">{t('sectionTranscription')}</span>
+            {cues && <span className="pr-badge">{cues.length} {t('cues')}</span>}
           </button>
           <div className="pr-section-body">
             <div className="pr-row">
@@ -842,7 +1029,7 @@ export default function App() {
         <div className={'pr-section' + (openSections.style ? ' is-open' : ' is-closed')}>
           <button className="pr-section-head" onClick={() => toggleSection('style')} type="button">
             <span className="pr-section-chev" />
-            <span className="pr-section-title">Subtitle style</span>
+            <span className="pr-section-title">{t('sectionSubtitleStyle')}</span>
           </button>
           <div className="pr-section-body">
             <div className="pr-row">
@@ -918,9 +1105,10 @@ export default function App() {
         {/* EXPORT FOOTER */}
         <div className="pr-export">
           <div className="pr-export-meta">
-            <span className={'pr-pill' + (cropEnabled ? ' on' : '')}>CROP</span>
-            <span className={'pr-pill' + (enabledCount > 0 ? ' on' : '')}>SILENCE {enabledCount > 0 ? enabledCount : ''}</span>
-            <span className={'pr-pill' + (cues && cues.length > 0 ? ' on' : '')}>SUBS {cues && cues.length > 0 ? cues.length : ''}</span>
+            <span className={'pr-pill' + (cropEnabled ? ' on' : '')}>{t('pillCrop')}</span>
+            <span className={'pr-pill' + (enabledCount > 0 ? ' on' : '')}>{t('pillSilence')} {enabledCount > 0 ? enabledCount : ''}</span>
+            <span className={'pr-pill' + (Math.abs(volumeDb) > 0.01 ? ' on' : '')}>{t('pillAudio')} {Math.abs(volumeDb) > 0.01 ? `${volumeDb > 0 ? '+' : ''}${volumeDb}dB` : ''}</span>
+            <span className={'pr-pill' + (cues && cues.length > 0 ? ' on' : '')}>{t('pillSubs')} {cues && cues.length > 0 ? cues.length : ''}</span>
           </div>
           <button
             onClick={exportNow}
