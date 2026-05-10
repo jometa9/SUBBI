@@ -3,6 +3,7 @@ type SubbiStyle = {
   fontSize: number;
   color: string;
   outline: string;
+  outlineEnabled: boolean;
   marginVPct: number;
   marginHPct: number;
   textCase: 'asis' | 'upper' | 'lower';
@@ -30,6 +31,7 @@ type SubbiProgressEvent =
 
 interface SubbiAPI {
   pickVideo(): Promise<string | null>;
+  pathExists(path: string): Promise<boolean>;
   getPathForFile(file: File): string;
   transcribe(opts: { videoPath: string; language: string; model: 'tiny' | 'medium' | 'large' }):
     Promise<{ srtPath: string; srt: string }>;

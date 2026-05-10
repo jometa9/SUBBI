@@ -10,6 +10,7 @@ export interface SubtitleStyle {
   fontSize: number;
   color: string;
   outline: string;
+  outlineEnabled?: boolean;
   marginVPct: number;
   marginHPct: number;
   textCase: 'asis' | 'upper' | 'lower';
@@ -137,12 +138,13 @@ function buildSubtitlesFilter(srtPath: string, style: SubtitleStyle): string {
   const hShift = Math.round(1280 * ((style.marginHPct || 0) / 100));
   const marginL = Math.max(0, 2 * hShift);
   const marginR = Math.max(0, -2 * hShift);
+  const outlineOn = style.outlineEnabled !== false;
   const styleParts = [
     `FontName=${style.fontName}`,
     `FontSize=${style.fontSize}`,
     `PrimaryColour=${hexToAssColor(style.color)}`,
     `OutlineColour=${hexToAssColor(style.outline)}`,
-    `BorderStyle=1`, `Outline=2`, `Shadow=0`,
+    `BorderStyle=1`, `Outline=${outlineOn ? 2 : 0}`, `Shadow=0`,
     `Alignment=2`,
     `MarginV=${marginV}`,
     `MarginL=${marginL}`, `MarginR=${marginR}`,

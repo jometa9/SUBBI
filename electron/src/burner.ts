@@ -10,6 +10,7 @@ export interface SubtitleStyle {
   fontSize: number;
   color: string;        // #RRGGBB
   outline: string;      // #RRGGBB
+  outlineEnabled?: boolean;
   marginVPct: number;   // % of video height from bottom
   marginHPct: number;   // % horizontal shift, 0 = centered, +right / -left
   textCase: 'asis' | 'upper' | 'lower';
@@ -142,13 +143,14 @@ export async function burn(
   const marginL = Math.max(0, 2 * hShift);
   const marginR = Math.max(0, -2 * hShift);
 
+  const outlineOn = opts.style.outlineEnabled !== false;
   const styleParts = [
     `FontName=${opts.style.fontName}`,
     `FontSize=${opts.style.fontSize}`,
     `PrimaryColour=${hexToAssColor(opts.style.color)}`,
     `OutlineColour=${hexToAssColor(opts.style.outline)}`,
     `BorderStyle=1`,
-    `Outline=2`,
+    `Outline=${outlineOn ? 2 : 0}`,
     `Shadow=0`,
     `Alignment=2`,
     `MarginV=${marginV}`,

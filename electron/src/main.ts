@@ -84,6 +84,10 @@ app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit();
 });
 
+ipcMain.handle('subbi:pathExists', async (_e, p: string) => {
+  try { return !!p && fs.existsSync(p) && fs.statSync(p).isFile(); } catch { return false; }
+});
+
 ipcMain.handle('subbi:pickVideo', async () => {
   if (!mainWindow) return null;
   const r = await dialog.showOpenDialog(mainWindow, {

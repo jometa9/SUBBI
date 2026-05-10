@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import SilenceTimeline, { type SilenceRegion, type SilenceTimelineHandle } from './SilenceTimeline';
 import CropOverlay, { type CropRect } from './CropOverlay';
 import Select from './Select';
+import ColorPicker from './ColorPicker';
 
 const IS_MAC = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform);
 
@@ -12,6 +13,7 @@ type SubtitleStyle = {
   fontSize: number;
   color: string;
   outline: string;
+  outlineEnabled: boolean;
   marginVPct: number;
   marginHPct: number;
   textCase: 'asis' | 'upper' | 'lower';
@@ -31,6 +33,7 @@ const DEFAULT_STYLE: SubtitleStyle = {
   fontSize: 28,
   color: '#FFFFFF',
   outline: '#000000',
+  outlineEnabled: true,
   marginVPct: 8,
   marginHPct: 0,
   textCase: 'asis',
@@ -56,7 +59,6 @@ const TRANSLATIONS: Record<UiLang, Record<string, string>> = {
     openVideo: 'Open video',
     dropHere: 'Drop a video here',
     dropNow: 'Release to drop',
-    orClick: 'or click to choose',
     sampleSubtitle: 'Sample subtitle',
     clickToEditCue: 'Click to edit subtitle (Enter to save · Esc to cancel)',
     transcription: 'Transcription',
@@ -71,6 +73,7 @@ const TRANSLATIONS: Record<UiLang, Record<string, string>> = {
     textCase: 'Case', caseAsIs: 'As is', caseUpper: 'UPPERCASE', caseLower: 'lowercase',
     maxPerLine: 'Max words',
     couldNotReadPath: 'Could not read file path. Try "Open video".',
+    notAVideo: 'Only video files are accepted (mp4, mov, mkv, webm, avi, m4v).',
     silenceSection: 'Silence removal',
     detectSilences: 'Detect silences', detecting: 'Detecting',
     threshold: 'Threshold', minDuration: 'Min duration',
@@ -101,7 +104,6 @@ const TRANSLATIONS: Record<UiLang, Record<string, string>> = {
     nothingToExport: 'No edits to export — nothing to do.',
     showInFolder: 'Show in folder',
     untitledProject: 'Untitled Project',
-    sectionSource: 'Source',
     sectionCrop: 'Crop',
     sectionSilence: 'Silence',
     sectionTranscription: 'Transcription',
@@ -124,6 +126,8 @@ const TRANSLATIONS: Record<UiLang, Record<string, string>> = {
     removeSplit: 'Remove split',
     splitsBadge: 'splits',
     exportPartsHint: 'Export will produce one file per segment.',
+    zoomTimeline: 'Zoom timeline',
+    zoomReset: 'Reset zoom',
     'log.transcribe.extractingAudio': 'Preparing audio…',
     'log.transcribe.extractingProgress': 'Preparing audio: {pct}%',
     'log.transcribe.audioReady': 'Audio ready.',
@@ -169,7 +173,6 @@ const TRANSLATIONS: Record<UiLang, Record<string, string>> = {
     openVideo: 'Abrir video',
     dropHere: 'Soltá un video aquí',
     dropNow: 'Soltalo ahora',
-    orClick: 'o hacé click para elegir',
     sampleSubtitle: 'Subtítulo de ejemplo',
     clickToEditCue: 'Click para editar el subtítulo (Enter para guardar · Esc para cancelar)',
     transcription: 'Transcripción',
@@ -184,6 +187,7 @@ const TRANSLATIONS: Record<UiLang, Record<string, string>> = {
     textCase: 'Mayús/minús', caseAsIs: 'Tal cual', caseUpper: 'MAYÚSCULAS', caseLower: 'minúsculas',
     maxPerLine: 'Máx palabras',
     couldNotReadPath: 'No se pudo leer la ruta del archivo. Probá con "Abrir video".',
+    notAVideo: 'Solo se aceptan archivos de video (mp4, mov, mkv, webm, avi, m4v).',
     silenceSection: 'Quitar silencios',
     detectSilences: 'Detectar silencios', detecting: 'Detectando',
     threshold: 'Umbral', minDuration: 'Duración mín.',
@@ -214,7 +218,6 @@ const TRANSLATIONS: Record<UiLang, Record<string, string>> = {
     nothingToExport: 'No hay ediciones para exportar.',
     showInFolder: 'Mostrar en carpeta',
     untitledProject: 'Proyecto sin título',
-    sectionSource: 'Origen',
     sectionCrop: 'Recortar',
     sectionSilence: 'Silencios',
     sectionTranscription: 'Transcripción',
@@ -237,6 +240,8 @@ const TRANSLATIONS: Record<UiLang, Record<string, string>> = {
     removeSplit: 'Quitar corte',
     splitsBadge: 'cortes',
     exportPartsHint: 'Se exportará un archivo por cada segmento.',
+    zoomTimeline: 'Zoom de la timeline',
+    zoomReset: 'Restablecer zoom',
     'log.transcribe.extractingAudio': 'Preparando audio…',
     'log.transcribe.extractingProgress': 'Preparando audio: {pct}%',
     'log.transcribe.audioReady': 'Audio listo.',
@@ -363,8 +368,31 @@ function fmtTime(sec: number): string {
     : `${pad(m)}:${pad(s)}.${pad(ms)}`;
 }
 
+// Compact tick label for the timeline ruler. Shows tenths only when the tick
+// interval is sub-second so labels stay readable at low zoom.
+function fmtRulerTime(sec: number, intervalSec: number): string {
+  if (!isFinite(sec) || sec < 0) sec = 0;
+  const pad = (n: number) => String(n).padStart(2, '0');
+  const h = Math.floor(sec / 3600);
+  const m = Math.floor((sec % 3600) / 60);
+  if (intervalSec < 1) {
+    const s = sec % 60;
+    return `${pad(m)}:${s.toFixed(1).padStart(4, '0')}`;
+  }
+  const s = Math.floor(sec % 60);
+  return h > 0 ? `${h}:${pad(m)}:${pad(s)}` : `${pad(m)}:${pad(s)}`;
+}
+
+// Choose a "nice" tick spacing in seconds for a given target spacing.
+function pickRulerInterval(targetSec: number): number {
+  const niceSeconds = [0.1, 0.2, 0.5, 1, 2, 5, 10, 15, 30, 60, 120, 300, 600, 900, 1800, 3600];
+  for (const n of niceSeconds) if (n >= targetSec) return n;
+  return niceSeconds[niceSeconds.length - 1];
+}
+
 const STORAGE_KEY = 'subbi:settings:v2';
 const PROJECT_PREFIX = 'subbi:proj:v1:';
+const LAST_VIDEO_KEY = 'subbi:lastVideoPath:v1';
 
 type ProjectState = {
   silenceRegions: SilenceRegion[];
@@ -385,6 +413,14 @@ type ProjectState = {
   model: 'tiny' | 'medium' | 'large';
   splitMarkers?: number[];
 };
+
+const VIDEO_EXTENSIONS = ['mp4', 'mov', 'mkv', 'webm', 'avi', 'm4v'];
+
+function isVideoPath(filePath: string): boolean {
+  const dot = filePath.lastIndexOf('.');
+  if (dot < 0) return false;
+  return VIDEO_EXTENSIONS.includes(filePath.slice(dot + 1).toLowerCase());
+}
 
 function projectKey(videoPath: string): string {
   return PROJECT_PREFIX + videoPath;
@@ -505,6 +541,21 @@ export default function App() {
   const [videoDuration, setVideoDuration] = useState<number>(0);
   const [peaks, setPeaks] = useState<number[] | null>(null);
   const timelineRef = useRef<SilenceTimelineHandle>(null);
+
+  // Timeline zoom (1 = fit, up to 10x). Both seek bar and waveform scale together.
+  const [timelineZoom, setTimelineZoom] = useState<number>(1);
+  const timelineScrollRef = useRef<HTMLDivElement>(null);
+  const lastZoomRef = useRef<number>(1);
+
+  // Hover frame preview over seek/timeline. Position is in viewport coords.
+  const [hoverPreview, setHoverPreview] = useState<
+    { time: number; clientX: number; topY: number } | null
+  >(null);
+  const previewVideoRef = useRef<HTMLVideoElement>(null);
+
+  // Width of the timeline scroll viewport — used to pick a tick spacing that
+  // keeps the ruler from getting too dense or too sparse.
+  const [scrollViewportW, setScrollViewportW] = useState<number>(800);
 
   // Crop
   const [cropEnabled, setCropEnabled] = useState<boolean>(false);
@@ -649,7 +700,7 @@ export default function App() {
 
   // Collapsible sidebar sections
   const [openSections, setOpenSections] = useState<Record<string, boolean>>({
-    source: true, crop: true, silence: true, audio: true, transcription: true, style: true,
+    crop: true, silence: true, audio: true, transcription: true, style: true,
   });
   const toggleSection = (id: string) =>
     setOpenSections(s => ({ ...s, [id]: !s[id] }));
@@ -751,6 +802,59 @@ export default function App() {
     if (v) v.playbackRate = playbackRate;
   }, [playbackRate, videoUrl]);
 
+  // Load the hidden preview video with the same source so hover scrubbing is instant.
+  useEffect(() => {
+    const pv = previewVideoRef.current;
+    if (!pv) return;
+    if (videoUrl) {
+      if (pv.src !== videoUrl) pv.src = videoUrl;
+      pv.muted = true;
+      try { pv.load(); } catch {}
+    } else {
+      try { pv.removeAttribute('src'); pv.load(); } catch {}
+    }
+  }, [videoUrl]);
+
+  // Seek the preview video as the hover position changes.
+  useEffect(() => {
+    const pv = previewVideoRef.current;
+    if (!pv || !hoverPreview) return;
+    const t = Math.max(0, Math.min((pv.duration || hoverPreview.time + 1) - 0.05, hoverPreview.time));
+    if (Math.abs(pv.currentTime - t) > 0.05) {
+      try { pv.currentTime = t; } catch {}
+    }
+  }, [hoverPreview]);
+
+  // Track the timeline scroll viewport width so the ruler can adapt its tick density.
+  useEffect(() => {
+    const el = timelineScrollRef.current;
+    if (!el) return;
+    const update = () => setScrollViewportW(el.clientWidth || 0);
+    update();
+    if (typeof ResizeObserver !== 'undefined') {
+      const ro = new ResizeObserver(update);
+      ro.observe(el);
+      return () => ro.disconnect();
+    }
+    window.addEventListener('resize', update);
+    return () => window.removeEventListener('resize', update);
+  }, [videoUrl]);
+
+  // When zoom changes, keep the cursor (currentTime) under the same horizontal viewport
+  // position. This avoids jumping to t=0 when zooming in.
+  useEffect(() => {
+    const el = timelineScrollRef.current;
+    const dur = videoDuration;
+    const prev = lastZoomRef.current;
+    lastZoomRef.current = timelineZoom;
+    if (!el || !dur || prev === timelineZoom) return;
+    const viewport = el.clientWidth;
+    const innerWidth = viewport * timelineZoom;
+    const cursorX = (currentTime / dur) * innerWidth;
+    const target = Math.max(0, Math.min(innerWidth - viewport, cursorX - viewport / 2));
+    el.scrollLeft = target;
+  }, [timelineZoom, videoDuration, currentTime]);
+
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
       if (!videoUrl) return;
@@ -796,12 +900,36 @@ export default function App() {
     () => autosaveStats(null)
   );
 
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      let last: string | null = null;
+      try { last = localStorage.getItem(LAST_VIDEO_KEY); } catch {}
+      if (!last) return;
+      const exists = await window.subbi.pathExists?.(last).catch(() => false);
+      if (cancelled) return;
+      if (exists) loadVideo(last);
+      else { try { localStorage.removeItem(LAST_VIDEO_KEY); } catch {} }
+    })();
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   function loadVideo(filePath: string) {
+    if (videoPath && videoPath !== filePath) {
+      saveProject(videoPath, {
+        silenceRegions, thresholdDb, autoThreshold, meanVolumeDb, minSilenceDur,
+        cropEnabled, crop, aspectId, volumeDb, noiseGateDb, noiseGateEnabled,
+        srtPath, rawCues, style, language, model,
+        splitMarkers,
+      });
+    }
     setVideoPath(filePath);
     setVideoUrl('file:///' + filePath.replace(/\\/g, '/'));
     setProc({ phase: 'idle' });
     setVideoDuration(0);
     setPeaks(null);
+    try { localStorage.setItem(LAST_VIDEO_KEY, filePath); } catch {}
 
     const saved = loadProject(filePath);
     justLoadedRef.current = true;
@@ -820,7 +948,7 @@ export default function App() {
       setSrtPath(saved.srtPath ?? null);
       setRawCues(saved.rawCues ?? null);
       setSplitMarkers(saved.splitMarkers ?? []);
-      if (saved.style) setStyle(saved.style);
+      if (saved.style) setStyle({ ...DEFAULT_STYLE, ...saved.style });
       if (saved.language) setLanguage(saved.language);
       if (saved.model) setModel(saved.model);
     } else {
@@ -940,6 +1068,7 @@ export default function App() {
     if (!f) return;
     const p = window.subbi.getPathForFile?.(f) || (f as any).path || '';
     if (!p) { setProc({ phase: 'error', message: t('couldNotReadPath') }); return; }
+    if (!isVideoPath(p)) { setProc({ phase: 'error', message: t('notAVideo') }); return; }
     loadVideo(p);
   }
 
@@ -1050,7 +1179,8 @@ export default function App() {
     fontSize: `${style.fontSize}px`,
     color: style.color,
     fontWeight: 700,
-    ['--outline' as any]: style.outline,
+    ['--outline' as any]: style.outlineEnabled ? style.outline : 'transparent',
+    textShadow: style.outlineEnabled ? undefined : 'none',
   };
 
   function beginEditCue() {
@@ -1119,6 +1249,46 @@ export default function App() {
     setCropEnabled(true);
   }
 
+  // Major ruler ticks (with label) and minor ticks (5 subdivisions per major).
+  const rulerTicks = useMemo(() => {
+    if (!videoDuration || videoDuration <= 0) {
+      return { major: [] as number[], minor: [] as number[], interval: 1 };
+    }
+    const innerWidth = Math.max(1, scrollViewportW * timelineZoom);
+    const pxPerSec = innerWidth / videoDuration;
+    // Aim for a major tick roughly every 90px on screen.
+    const targetSec = 90 / pxPerSec;
+    const interval = pickRulerInterval(targetSec);
+    const major: number[] = [];
+    const minor: number[] = [];
+    for (let t = 0; t <= videoDuration + 1e-3; t += interval) {
+      major.push(Math.min(t, videoDuration));
+    }
+    const minorStep = interval / 5;
+    if (minorStep > 0 && pxPerSec * minorStep > 6) {
+      for (let t = minorStep; t < videoDuration - 1e-3; t += minorStep) {
+        if (Math.abs(t / interval - Math.round(t / interval)) > 1e-6) {
+          minor.push(t);
+        }
+      }
+    }
+    return { major, minor, interval };
+  }, [videoDuration, timelineZoom, scrollViewportW]);
+
+  function handleTimelineHover(e: React.MouseEvent<HTMLDivElement>) {
+    if (!videoDuration) return;
+    const rect = e.currentTarget.getBoundingClientRect();
+    if (rect.width <= 0) return;
+    const x = e.clientX - rect.left;
+    const ratio = Math.max(0, Math.min(1, x / rect.width));
+    const time = ratio * videoDuration;
+    setHoverPreview({ time, clientX: e.clientX, topY: rect.top });
+  }
+
+  function clearTimelineHover() {
+    setHoverPreview(null);
+  }
+
   function handleClearOtherProjects() {
     if (storageStats.othersCount === 0) return;
     const msg = (TRANSLATIONS[uiLang]['confirmClearOthers'] ?? TRANSLATIONS.en['confirmClearOthers'])
@@ -1156,6 +1326,15 @@ export default function App() {
         </span>
         <button
           type="button"
+          className="app-titlebar-open no-drag"
+          onClick={pickFile}
+          disabled={isBusy}
+          title={t('openVideo')}
+        >
+          {t('openVideo')}
+        </button>
+        <button
+          type="button"
           className="app-titlebar-clear no-drag"
           onClick={handleClearOtherProjects}
           disabled={storageStats.othersCount === 0}
@@ -1191,8 +1370,8 @@ export default function App() {
         {!videoUrl && (
           <label className={'dropzone' + (over ? ' over' : '')} onClick={pickFile}>
             <div style={{ fontSize: 42, marginBottom: 12, lineHeight: 1 }}>{over ? '⬇' : '🎬'}</div>
-            <div style={{ fontSize: 18, marginBottom: 8 }}>{over ? t('dropNow') : t('dropHere')}</div>
-            <div className="dropzone-hint" style={{ fontSize: 12 }}>{t('orClick')}</div>
+            <div style={{ fontSize: 18, marginBottom: 12 }}>{over ? t('dropNow') : t('dropHere')}</div>
+            <span className="dropzone-cta">{t('openVideo')}</span>
           </label>
         )}
         {videoUrl && (
@@ -1370,6 +1549,32 @@ export default function App() {
               </span>
             )}
             <span className="vc-spacer" />
+            <span className="vc-zoom-icon" title={`${t('zoomTimeline')}: ${timelineZoom.toFixed(1)}x`}>
+              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                <circle cx="11" cy="11" r="7" />
+                <line x1="21" y1="21" x2="16" y2="16" />
+              </svg>
+            </span>
+            <input
+              type="range"
+              className="pr-range vc-zoom"
+              min={1}
+              max={10}
+              step={0.1}
+              value={timelineZoom}
+              disabled={!videoDuration}
+              style={rangePct(timelineZoom, 1, 10)}
+              onChange={(e) => setTimelineZoom(+e.target.value)}
+              title={`${t('zoomTimeline')}: ${timelineZoom.toFixed(1)}x`}
+            />
+            {timelineZoom !== 1 && (
+              <button
+                type="button"
+                className="vc-zoom-reset"
+                onClick={() => setTimelineZoom(1)}
+                title={t('zoomReset')}
+              >×</button>
+            )}
             <button
               className="vc-btn"
               onClick={() => { const v = videoRef.current; if (v) v.muted = !v.muted; }}
@@ -1401,40 +1606,87 @@ export default function App() {
         {videoUrl && (
           <div className="audio-strip">
             <div className="audio-strip-main">
-              <div className="audio-strip-seek">
-                <input
-                  type="range"
-                  className="pr-range vc-seek"
-                  min={0}
-                  max={Math.max(0.01, videoDuration)}
-                  step={0.01}
-                  value={Math.min(currentTime, videoDuration || 0)}
-                  style={rangePct(Math.min(currentTime, videoDuration || 0), 0, Math.max(0.01, videoDuration))}
-                  onChange={(e) => seekTo(+e.target.value)}
-                />
+              <div
+                ref={timelineScrollRef}
+                className="audio-strip-scroll"
+                onMouseLeave={clearTimelineHover}
+              >
+                <div
+                  className="audio-strip-zoomable"
+                  style={{ width: `${timelineZoom * 100}%` }}
+                  onMouseMove={handleTimelineHover}
+                  onMouseEnter={handleTimelineHover}
+                >
+                  {hoverPreview && videoDuration > 0 && (
+                    <div
+                      className="audio-strip-hoverline"
+                      style={{ left: `${(hoverPreview.time / videoDuration) * 100}%` }}
+                    />
+                  )}
+                  {videoDuration > 0 && (
+                    <div className="audio-strip-ruler">
+                      {rulerTicks.minor.map((t, i) => (
+                        <div
+                          key={`mn-${i}`}
+                          className="audio-strip-ruler-tick is-minor"
+                          style={{ left: `${(t / videoDuration) * 100}%` }}
+                        />
+                      ))}
+                      {rulerTicks.major.map((t, i) => {
+                        const left = (t / videoDuration) * 100;
+                        const isLast = i === rulerTicks.major.length - 1;
+                        return (
+                          <div
+                            key={`mj-${i}`}
+                            className="audio-strip-ruler-tick is-major"
+                            style={{ left: `${left}%` }}
+                          >
+                            <span
+                              className={'audio-strip-ruler-label' + (isLast ? ' is-end' : '')}
+                            >
+                              {fmtRulerTime(t, rulerTicks.interval)}
+                            </span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                  <div className="audio-strip-seek">
+                    <input
+                      type="range"
+                      className="pr-range vc-seek"
+                      min={0}
+                      max={Math.max(0.01, videoDuration)}
+                      step={0.01}
+                      value={Math.min(currentTime, videoDuration || 0)}
+                      style={rangePct(Math.min(currentTime, videoDuration || 0), 0, Math.max(0.01, videoDuration))}
+                      onChange={(e) => seekTo(+e.target.value)}
+                    />
+                  </div>
+                  <div className="audio-strip-timeline">
+                    <SilenceTimeline
+                      key={videoUrl}
+                      ref={timelineRef}
+                      videoEl={videoRef.current}
+                      peaks={peaks}
+                      duration={videoDuration}
+                      regions={silenceRegions}
+                      currentTime={currentTime}
+                      onToggleRegion={toggleSilence}
+                      onUpdateRegion={updateSilence}
+                      splitMarkers={splitMarkers}
+                      selectedMarker={selectedMarker}
+                      onSelectMarker={setSelectedMarker}
+                    />
+                  </div>
+                </div>
               </div>
-              <div className="audio-strip-timeline">
-                <SilenceTimeline
-                  key={videoUrl}
-                  ref={timelineRef}
-                  videoEl={videoRef.current}
-                  peaks={peaks}
-                  duration={videoDuration}
-                  regions={silenceRegions}
-                  currentTime={currentTime}
-                  onToggleRegion={toggleSilence}
-                  onUpdateRegion={updateSilence}
-                  splitMarkers={splitMarkers}
-                  selectedMarker={selectedMarker}
-                  onSelectMarker={setSelectedMarker}
-                />
-                {peaks === null && (
-                  <div className="audio-strip-hint">{t('generatingWaveform')}</div>
-                )}
-                {silenceRegions.length > 0 && (
-                  <div className="audio-strip-hint">{t('clickRegionToToggle')}</div>
-                )}
-              </div>
+              {peaks === null && (
+                <div className="audio-strip-hint">{t('generatingWaveform')}</div>
+              )}
+              {silenceRegions.length > 0 && (
+                <div className="audio-strip-hint">{t('clickRegionToToggle')}</div>
+              )}
             </div>
             <div className="audio-strip-faders">
               <div className="audio-fader">
@@ -1480,26 +1732,6 @@ export default function App() {
       </div>
 
       <aside className="pr-sidebar">
-
-        {/* FILE */}
-        <div className={'pr-section' + (openSections.source ? ' is-open' : ' is-closed')}>
-          <button className="pr-section-head" onClick={() => toggleSection('source')} type="button">
-            <span className="pr-section-chev" />
-            <span className="pr-section-title">{t('sectionSource')}</span>
-          </button>
-          <div className="pr-section-body">
-            <div className="pr-row">
-              <button onClick={pickFile} disabled={isBusy} className="pr-btn pr-btn-flex">
-                {videoPath ? t('openVideo') : t('openVideo')}
-              </button>
-            </div>
-            {videoPath && (
-              <div className="pr-filename" title={videoPath}>
-                {videoPath.split(/[\\/]/).pop()}
-              </div>
-            )}
-          </div>
-        </div>
 
         {/* CROP */}
         <div className={'pr-section' + (openSections.crop ? ' is-open' : ' is-closed')}>
@@ -1793,13 +2025,17 @@ export default function App() {
             </div>
             <div className="pr-row">
               <span className="pr-label">{t('color')}</span>
-              <input type="color" value={style.color}
-                     onChange={e => setStyle(s => ({ ...s, color: e.target.value }))}
-                     className="pr-color" />
-              <span className="pr-label pr-label-mid">{t('outline')}</span>
-              <input type="color" value={style.outline}
-                     onChange={e => setStyle(s => ({ ...s, outline: e.target.value }))}
-                     className="pr-color" />
+              <ColorPicker value={style.color}
+                           onChange={v => setStyle(s => ({ ...s, color: v }))} />
+              <label className="pr-check pr-label-mid" title={t('outline')}>
+                <input type="checkbox"
+                       checked={style.outlineEnabled}
+                       onChange={e => setStyle(s => ({ ...s, outlineEnabled: e.target.checked }))} />
+                <span>{t('outline')}</span>
+              </label>
+              <ColorPicker value={style.outline}
+                           disabled={!style.outlineEnabled}
+                           onChange={v => setStyle(s => ({ ...s, outline: v }))} />
             </div>
             <div className="pr-row">
               <span className="pr-label">{t('textCase')}</span>
@@ -1865,6 +2101,32 @@ export default function App() {
           </button>
         </div>
       </aside>
+      </div>
+
+      {/* Hover preview: hidden video stays mounted so seeking is instant. */}
+      <div
+        className={'timeline-preview' + (hoverPreview && videoUrl ? ' is-on' : '')}
+        style={
+          hoverPreview
+            ? {
+                left: hoverPreview.clientX,
+                top: hoverPreview.topY,
+              }
+            : undefined
+        }
+      >
+        <div className="timeline-preview-frame">
+          <video
+            ref={previewVideoRef}
+            className="timeline-preview-video"
+            muted
+            playsInline
+            preload="auto"
+          />
+        </div>
+        <div className="timeline-preview-time">
+          {hoverPreview ? fmtTime(hoverPreview.time) : ''}
+        </div>
       </div>
     </div>
   );

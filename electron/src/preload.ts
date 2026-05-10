@@ -2,6 +2,7 @@ import { contextBridge, ipcRenderer, webUtils } from 'electron';
 
 contextBridge.exposeInMainWorld('subbi', {
   pickVideo: () => ipcRenderer.invoke('subbi:pickVideo'),
+  pathExists: (p: string) => ipcRenderer.invoke('subbi:pathExists', p),
   getPathForFile: (file: File) => {
     try { return webUtils.getPathForFile(file); } catch { return ''; }
   },
