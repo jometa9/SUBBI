@@ -9,6 +9,8 @@ interface Props {
   // Aspect ratio lock as width/height. null = free.
   aspectRatio: number | null;
   onChange: (next: CropRect) => void;
+  onApply?: () => void;
+  onUserResize?: () => void;
 }
 
 type DragMode =
@@ -37,7 +39,10 @@ function getRenderedVideoRect(v: HTMLVideoElement): { left: number; top: number;
     h = ch;
     w = ch * videoAspect;
   }
-  return { left: (cw - w) / 2, top: (ch - h) / 2, width: w, height: h };
+  // Offset of the <video> element within its positioned ancestor (the overlay parent).
+  const ox = v.offsetLeft;
+  const oy = v.offsetTop;
+  return { left: ox + (cw - w) / 2, top: oy + (ch - h) / 2, width: w, height: h };
 }
 
 const HANDLES: Handle[] = ['n', 's', 'e', 'w', 'ne', 'nw', 'se', 'sw'];
@@ -53,7 +58,7 @@ const HANDLE_STYLE: Record<Handle, React.CSSProperties> = {
   sw: { bottom: -5, left: -5, cursor: 'nesw-resize' },
 };
 
-export default function CropOverlay({ videoEl, crop, aspectRatio, onChange }: Props) {
+export default function CropOverlay({ videoEl, crop, aspectRatio, onChange, onApply, onUserResize }: Props) {
   const overlayRef = useRef<HTMLDivElement>(null);
   const [, force] = useState(0);
   const dragRef = useRef<DragMode | null>(null);
@@ -189,7 +194,7 @@ export default function CropOverlay({ videoEl, crop, aspectRatio, onChange }: Pr
       style={{
         position: 'absolute',
         inset: 0,
-        pointerEvents: 'auto',
+        pointerEvents: 'none',
         zIndex: 5,
       }}
     >
@@ -204,7 +209,7 @@ export default function CropOverlay({ videoEl, crop, aspectRatio, onChange }: Pr
             <rect x={boxLeft} y={boxTop} width={boxW} height={boxH} fill="black" />
           </mask>
         </defs>
-        <rect x="0" y="0" width="100%" height="100%" fill="rgba(0,0,0,0.55)" mask="url(#cropMask)" />
+        <rect x="0" y="0" width="100%" height="100%" fill="rgba(0,0,0,0.30)" mask="url(#cropMask)" />
       </svg>
 
       {/* Crop box */}
@@ -220,6 +225,7 @@ export default function CropOverlay({ videoEl, crop, aspectRatio, onChange }: Pr
           boxShadow: '0 0 0 1px rgba(0,0,0,0.6)',
           cursor: 'move',
           boxSizing: 'border-box',
+          pointerEvents: 'auto',
         }}
       >
         {/* Rule-of-thirds grid */}
@@ -234,7 +240,7 @@ export default function CropOverlay({ videoEl, crop, aspectRatio, onChange }: Pr
         {HANDLES.map(h => (
           <div
             key={h}
-            onPointerDown={(e) => startDrag(e, { kind: 'resize', handle: h, startX: e.clientX, startY: e.clientY, orig: crop })}
+            onPointerDown={(e) => { onUserResize?.(); startDrag(e, { kind: 'resize', handle: h, startX: e.clientX, startY: e.clientY, orig: crop }); }}
             style={{
               position: 'absolute',
               width: 10, height: 10,

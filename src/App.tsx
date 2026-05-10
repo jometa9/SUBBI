@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import SilenceTimeline, { type SilenceRegion, type SilenceTimelineHandle } from './SilenceTimeline';
 import CropOverlay, { type CropRect } from './CropOverlay';
 import Select from './Select';
@@ -573,6 +573,25 @@ export default function App() {
     { time: number; clientX: number; topY: number } | null
   >(null);
   const previewVideoRef = useRef<HTMLVideoElement>(null);
+  const stageRef = useRef<HTMLDivElement | null>(null);
+  const stageRoRef = useRef<ResizeObserver | null>(null);
+  const [stageSize, setStageSize] = useState<{ w: number; h: number }>({ w: 0, h: 0 });
+  const setStageRef = useCallback((el: HTMLDivElement | null) => {
+    if (stageRef.current === el) return;
+    stageRef.current = el;
+    stageRoRef.current?.disconnect();
+    stageRoRef.current = null;
+    if (el) {
+      const update = () => {
+        const w = el.clientWidth, h = el.clientHeight;
+        setStageSize(prev => (prev.w === w && prev.h === h ? prev : { w, h }));
+      };
+      update();
+      const ro = new ResizeObserver(update);
+      ro.observe(el);
+      stageRoRef.current = ro;
+    }
+  }, []);
 
   // Width of the timeline scroll viewport — used to pick a tick spacing that
   // keeps the ruler from getting too dense or too sparse.
@@ -580,6 +599,7 @@ export default function App() {
 
   // Crop
   const [cropEnabled, setCropEnabled] = useState<boolean>(false);
+  const [cropEditing, setCropEditing] = useState<boolean>(false);
   const [crop, setCrop] = useState<CropRect>(DEFAULT_CROP);
   const [aspectId, setAspectId] = useState<string>('free');
 
@@ -1290,6 +1310,7 @@ export default function App() {
     setCrop(next);
     setAspectId('free');
     setCropEnabled(true);
+    setCropEditing(true);
   }
 
   // Major ruler ticks (with label) and minor ticks (5 subdivisions per major).
@@ -1495,20 +1516,49 @@ export default function App() {
             />
           </div>
         )}
-        {videoUrl && (
-          <div className="video-stage">
+        {videoUrl && (() => {
+          const cropApplied = cropEnabled && !cropEditing && videoW > 0 && videoH > 0;
+          let croppedWrapW = 0, croppedWrapH = 0;
+          if (cropApplied && stageSize.w > 0 && stageSize.h > 0) {
+            const sliceAspect = (crop.width * videoW) / (crop.height * videoH);
+            const stageAspect = stageSize.w / stageSize.h;
+            if (sliceAspect > stageAspect) {
+              croppedWrapW = stageSize.w;
+              croppedWrapH = stageSize.w / sliceAspect;
+            } else {
+              croppedWrapH = stageSize.h;
+              croppedWrapW = stageSize.h * sliceAspect;
+            }
+          }
+          const wrapStyle: React.CSSProperties | undefined = previewZoom !== 1 ? {
+            width: `${(videoRef.current?.videoWidth || 1280) * previewZoom}px`,
+            height: `${(videoRef.current?.videoHeight || 720) * previewZoom}px`,
+          } : (cropApplied && croppedWrapW > 0 ? {
+            width: `${croppedWrapW}px`,
+            height: `${croppedWrapH}px`,
+            overflow: 'hidden',
+          } : undefined);
+          const videoStyle: React.CSSProperties | undefined = cropApplied ? {
+            position: 'absolute',
+            top: `${-crop.y * 100 / crop.height}%`,
+            left: `${-crop.x * 100 / crop.width}%`,
+            width: `${100 / crop.width}%`,
+            height: `${100 / crop.height}%`,
+            maxWidth: 'none',
+            maxHeight: 'none',
+          } : undefined;
+          return (
+          <div className="video-stage" ref={setStageRef}>
             <div
-              className={'video-wrap' + (previewZoom !== 1 ? ' is-zoomed' : '')}
-              style={previewZoom !== 1 ? {
-                width: `${(videoRef.current?.videoWidth || 1280) * previewZoom}px`,
-                height: `${(videoRef.current?.videoHeight || 720) * previewZoom}px`,
-              } : undefined}
+              className={'video-wrap' + (previewZoom !== 1 ? ' is-zoomed' : '') + (cropApplied ? ' is-cropped' : '')}
+              style={wrapStyle}
             >
               <video
                 ref={videoRef}
                 src={videoUrl}
                 onClick={togglePlay}
                 onLoadedMetadata={() => bumpVideoEl(n => n + 1)}
+                style={videoStyle}
               />
               <div
                 className={
@@ -1556,17 +1606,20 @@ export default function App() {
                   previewText
                 )}
               </div>
-              {cropEnabled && (
+              {cropEnabled && cropEditing && (
                 <CropOverlay
                   videoEl={videoRef.current}
                   crop={crop}
                   aspectRatio={aspectRatio}
                   onChange={setCrop}
+                  onApply={() => setCropEditing(false)}
+                  onUserResize={() => setAspectId('free')}
                 />
               )}
             </div>
           </div>
-        )}
+          );
+        })()}
         {videoUrl && (
           <div className="video-controls">
             <button
@@ -1831,6 +1884,7 @@ export default function App() {
                     onClick={() => {
                       setAspectId(p.id);
                       setCropEnabled(true);
+                      setCropEditing(true);
                     }}
                     className={'pr-chip' + (cropEnabled && aspectId === p.id ? ' pr-chip-on' : '')}
                   >{p.id === 'free' ? t('aspectFree') : p.label}</button>
@@ -1882,15 +1936,53 @@ export default function App() {
                 </label>
               </div>
             </div>
+            <div className="pr-row">
+              <span className="pr-label">Center</span>
+              <div className="pr-aspect-row">
+                <button
+                  type="button"
+                  className="pr-chip"
+                  disabled={!videoPath || isBusy}
+                  title="Center horizontally"
+                  onClick={() => setCrop(c => ({ ...c, x: (1 - c.width) / 2 }))}
+                >
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="3" x2="12" y2="21"/><polyline points="6 9 3 12 6 15"/><polyline points="18 9 21 12 18 15"/></svg>
+                </button>
+                <button
+                  type="button"
+                  className="pr-chip"
+                  disabled={!videoPath || isBusy}
+                  title="Center vertically"
+                  onClick={() => setCrop(c => ({ ...c, y: (1 - c.height) / 2 }))}
+                >
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="3" y1="12" x2="21" y2="12"/><polyline points="9 6 12 3 15 6"/><polyline points="9 18 12 21 15 18"/></svg>
+                </button>
+                <button
+                  type="button"
+                  className="pr-chip"
+                  disabled={!videoPath || isBusy}
+                  title="Center both"
+                  onClick={() => setCrop(c => ({ ...c, x: (1 - c.width) / 2, y: (1 - c.height) / 2 }))}
+                >
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="3"/><line x1="12" y1="3" x2="12" y2="7"/><line x1="12" y1="17" x2="12" y2="21"/><line x1="3" y1="12" x2="7" y2="12"/><line x1="17" y1="12" x2="21" y2="12"/></svg>
+                </button>
+              </div>
+            </div>
             <div className="pr-row pr-row-end">
               <button
-                onClick={() => { setCrop(DEFAULT_CROP); setAspectId('free'); setCropEnabled(true); }}
+                onClick={() => { setCrop(DEFAULT_CROP); setAspectId('free'); setCropEnabled(true); setCropEditing(true); }}
                 disabled={!videoPath || isBusy}
                 className="pr-btn pr-btn-ghost">
                 {t('resetCrop')}
               </button>
               <button
-                onClick={() => setCropEnabled(false)}
+                onClick={() => setCropEditing(v => !v)}
+                disabled={!cropEnabled || isBusy}
+                className="pr-btn pr-btn-ghost">
+                {cropEditing ? 'Apply' : 'Edit'}
+              </button>
+              <button
+                onClick={() => { setCropEnabled(false); setCropEditing(false); }}
                 disabled={!cropEnabled || isBusy}
                 className="pr-btn pr-btn-ghost">
                 {t('disableCrop')}
@@ -2097,6 +2189,35 @@ export default function App() {
                      style={rangePct(style.marginHPct, -40, 40)}
                      className="pr-range pr-range-flex" />
               <span className="pr-value">{style.marginHPct > 0 ? '+' : ''}{style.marginHPct}%</span>
+            </div>
+            <div className="pr-row">
+              <span className="pr-label">Center</span>
+              <div className="pr-aspect-row">
+                <button
+                  type="button"
+                  className="pr-chip"
+                  title="Center horizontally"
+                  onClick={() => setStyle(s => ({ ...s, marginHPct: 0 }))}
+                >
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="3" x2="12" y2="21"/><polyline points="6 9 3 12 6 15"/><polyline points="18 9 21 12 18 15"/></svg>
+                </button>
+                <button
+                  type="button"
+                  className="pr-chip"
+                  title="Center vertically"
+                  onClick={() => setStyle(s => ({ ...s, marginVPct: 22 }))}
+                >
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="3" y1="12" x2="21" y2="12"/><polyline points="9 6 12 3 15 6"/><polyline points="9 18 12 21 15 18"/></svg>
+                </button>
+                <button
+                  type="button"
+                  className="pr-chip"
+                  title="Center both"
+                  onClick={() => setStyle(s => ({ ...s, marginHPct: 0, marginVPct: 22 }))}
+                >
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="3"/><line x1="12" y1="3" x2="12" y2="7"/><line x1="12" y1="17" x2="12" y2="21"/><line x1="3" y1="12" x2="7" y2="12"/><line x1="17" y1="12" x2="21" y2="12"/></svg>
+                </button>
+              </div>
             </div>
             <div className="pr-row">
               <span className="pr-label">{t('color')}</span>
