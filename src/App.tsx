@@ -1,6 +1,9 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import SilenceTimeline, { type SilenceRegion, type SilenceTimelineHandle } from './SilenceTimeline';
 import CropOverlay, { type CropRect } from './CropOverlay';
+import Select from './Select';
+
+const IS_MAC = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform);
 
 type Cue = { start: number; end: number; text: string };
 
@@ -689,7 +692,7 @@ export default function App() {
 
   return (
     <div className="app">
-      <div className="app-titlebar drag-region">
+      <div className={'app-titlebar drag-region' + (IS_MAC ? ' is-mac' : '')}>
         <span className="app-titlebar-brand">SUBBI</span>
         <span className="app-titlebar-sep">—</span>
         <span className="app-titlebar-doc">
@@ -700,10 +703,14 @@ export default function App() {
             {autosaveTick === 'saved' ? '● Saved' : '○ Auto'}
           </span>
         )}
-        <select value={uiLang} onChange={e => setUiLang(e.target.value as UiLang)} className="app-titlebar-lang no-drag">
-          <option value="en">EN</option>
-          <option value="es">ES</option>
-        </select>
+        <div className="app-titlebar-lang no-drag">
+          <Select
+            size="sm"
+            value={uiLang}
+            onChange={v => setUiLang(v as UiLang)}
+            options={[{ value: 'en', label: 'EN' }, { value: 'es', label: 'ES' }]}
+          />
+        </div>
       </div>
       <div className="app-body">
       <div className={'preview' + (!videoUrl ? ' drag-region' : '')}
@@ -732,20 +739,21 @@ export default function App() {
             <button className="pr-btn pr-btn-ghost vc-fit-btn" onClick={zoomActual} title="Actual pixels (100%)">1:1</button>
             <span className="vc-spacer" />
             <span className="vc-toolbar-label">Speed</span>
-            <select
-              className="pr-input vc-speed"
-              value={playbackRate}
-              onChange={e => setPlaybackRate(+e.target.value)}
+            <Select
+              className="vc-speed"
+              value={String(playbackRate)}
+              onChange={v => setPlaybackRate(+v)}
               title="Playback speed"
-            >
-              <option value={0.25}>0.25×</option>
-              <option value={0.5}>0.5×</option>
-              <option value={0.75}>0.75×</option>
-              <option value={1}>1×</option>
-              <option value={1.25}>1.25×</option>
-              <option value={1.5}>1.5×</option>
-              <option value={2}>2×</option>
-            </select>
+              options={[
+                { value: '0.25', label: '0.25×' },
+                { value: '0.5', label: '0.5×' },
+                { value: '0.75', label: '0.75×' },
+                { value: '1', label: '1×' },
+                { value: '1.25', label: '1.25×' },
+                { value: '1.5', label: '1.5×' },
+                { value: '2', label: '2×' },
+              ]}
+            />
           </div>
         )}
         {videoUrl && (
@@ -801,15 +809,7 @@ export default function App() {
               <span className="vc-time-sep"> / </span>
               <span className="vc-time-tot">{fmtTime(videoDuration)}</span>
             </div>
-            <input
-              type="range"
-              className="pr-range vc-seek"
-              min={0}
-              max={Math.max(0.01, videoDuration)}
-              step={0.01}
-              value={Math.min(currentTime, videoDuration || 0)}
-              onChange={(e) => seekTo(+e.target.value)}
-            />
+            <span className="vc-spacer" />
             <button
               className="vc-btn"
               onClick={() => { const v = videoRef.current; if (v) v.muted = !v.muted; }}
@@ -834,6 +834,19 @@ export default function App() {
                 v.volume = +e.target.value;
                 if (+e.target.value > 0 && v.muted) v.muted = false;
               }}
+            />
+          </div>
+        )}
+        {videoUrl && (
+          <div className="vc-seek-row">
+            <input
+              type="range"
+              className="pr-range vc-seek"
+              min={0}
+              max={Math.max(0.01, videoDuration)}
+              step={0.01}
+              value={Math.min(currentTime, videoDuration || 0)}
+              onChange={(e) => seekTo(+e.target.value)}
             />
           </div>
         )}
@@ -1002,20 +1015,32 @@ export default function App() {
           <div className="pr-section-body">
             <div className="pr-row">
               <span className="pr-label">{t('language')}</span>
-              <select value={language} onChange={e => setLanguage(e.target.value)} disabled={isBusy} className="pr-input pr-input-flex">
-                <option value="es">{t('langSpanish')}</option>
-                <option value="en">{t('langEnglish')}</option>
-                <option value="pt">{t('langPortuguese')}</option>
-                <option value="auto">{t('langAuto')}</option>
-              </select>
+              <Select
+                className="pr-input-flex"
+                value={language}
+                onChange={setLanguage}
+                disabled={isBusy}
+                options={[
+                  { value: 'es', label: t('langSpanish') },
+                  { value: 'en', label: t('langEnglish') },
+                  { value: 'pt', label: t('langPortuguese') },
+                  { value: 'auto', label: t('langAuto') },
+                ]}
+              />
             </div>
             <div className="pr-row">
               <span className="pr-label">{t('model')}</span>
-              <select value={model} onChange={e => setModel(e.target.value as any)} disabled={isBusy} className="pr-input pr-input-flex">
-                <option value="tiny">{t('modelTiny')}</option>
-                <option value="medium">{t('modelMedium')}</option>
-                <option value="large">{t('modelLarge')}</option>
-              </select>
+              <Select
+                className="pr-input-flex"
+                value={model}
+                onChange={v => setModel(v as any)}
+                disabled={isBusy}
+                options={[
+                  { value: 'tiny', label: t('modelTiny') },
+                  { value: 'medium', label: t('modelMedium') },
+                  { value: 'large', label: t('modelLarge') },
+                ]}
+              />
             </div>
             <div className="pr-row pr-row-end">
               <button onClick={transcribe} disabled={!videoPath || isBusy} className="pr-btn">
@@ -1034,9 +1059,12 @@ export default function App() {
           <div className="pr-section-body">
             <div className="pr-row">
               <span className="pr-label">{t('font')}</span>
-              <select value={style.fontName} onChange={e => setStyle(s => ({ ...s, fontName: e.target.value }))} className="pr-input pr-input-flex">
-                {FONT_OPTIONS.map(f => <option key={f} value={f}>{f}</option>)}
-              </select>
+              <Select
+                className="pr-input-flex"
+                value={style.fontName}
+                onChange={v => setStyle(s => ({ ...s, fontName: v }))}
+                options={FONT_OPTIONS.map(f => ({ value: f, label: f }))}
+              />
             </div>
             <div className="pr-row">
               <span className="pr-label">{t('size')}</span>
@@ -1071,11 +1099,16 @@ export default function App() {
             </div>
             <div className="pr-row">
               <span className="pr-label">{t('textCase')}</span>
-              <select value={style.textCase} onChange={e => setStyle(s => ({ ...s, textCase: e.target.value as any }))} className="pr-input pr-input-flex">
-                <option value="asis">{t('caseAsIs')}</option>
-                <option value="upper">{t('caseUpper')}</option>
-                <option value="lower">{t('caseLower')}</option>
-              </select>
+              <Select
+                className="pr-input-flex"
+                value={style.textCase}
+                onChange={v => setStyle(s => ({ ...s, textCase: v as any }))}
+                options={[
+                  { value: 'asis', label: t('caseAsIs') },
+                  { value: 'upper', label: t('caseUpper') },
+                  { value: 'lower', label: t('caseLower') },
+                ]}
+              />
             </div>
             <div className="pr-row">
               <span className="pr-label">{t('maxPerLine')}</span>
