@@ -26,6 +26,14 @@ interface Props {
   selectedMarker?: number | null;
   onSelectMarker?: (time: number | null) => void;
   height?: number;
+  theme?: 'light' | 'dark';
+}
+
+function waveColors(theme: 'light' | 'dark' | undefined) {
+  if (theme === 'light') {
+    return { waveColor: '#9aa3ad', progressColor: '#5b6470', cursorColor: '#d97706' };
+  }
+  return { waveColor: '#5b6470', progressColor: '#9aa3ad', cursorColor: '#ffd166' };
 }
 
 const SilenceTimeline = React.forwardRef<SilenceTimelineHandle, Props>(function SilenceTimeline(
@@ -33,7 +41,7 @@ const SilenceTimeline = React.forwardRef<SilenceTimelineHandle, Props>(function 
     videoEl, peaks, duration, regions, currentTime,
     onToggleRegion, onUpdateRegion,
     splitMarkers = [], selectedMarker = null, onSelectMarker,
-    height = 84,
+    height = 84, theme,
   },
   ref
 ) {
@@ -62,12 +70,13 @@ const SilenceTimeline = React.forwardRef<SilenceTimelineHandle, Props>(function 
     const regionsPlugin = RegionsPlugin.create();
     regionsPluginRef.current = regionsPlugin;
 
+    const colors = waveColors(theme);
     const ws = WaveSurfer.create({
       container: containerRef.current,
       height,
-      waveColor: '#5b6470',
-      progressColor: '#9aa3ad',
-      cursorColor: '#ffd166',
+      waveColor: colors.waveColor,
+      progressColor: colors.progressColor,
+      cursorColor: colors.cursorColor,
       cursorWidth: 3,
       barWidth: 2,
       barGap: 1,
@@ -104,6 +113,20 @@ const SilenceTimeline = React.forwardRef<SilenceTimelineHandle, Props>(function 
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [videoEl, peaks, duration]);
+
+  // Update wavesurfer colors when the theme changes without re-creating it.
+  useEffect(() => {
+    const ws = wsRef.current;
+    if (!ws) return;
+    const colors = waveColors(theme);
+    try {
+      ws.setOptions({
+        waveColor: colors.waveColor,
+        progressColor: colors.progressColor,
+        cursorColor: colors.cursorColor,
+      });
+    } catch {}
+  }, [theme]);
 
   // Sync regions list with the plugin.
   useEffect(() => {

@@ -167,6 +167,9 @@ const TRANSLATIONS: Record<UiLang, Record<string, string>> = {
     resetConfirm: 'Click again to confirm',
     resetSection: 'Reset',
     resetSectionTitle: 'Reset this section to defaults',
+    themeSystem: 'Theme: System (click to switch to Light)',
+    themeLight: 'Theme: Light (click to switch to Dark)',
+    themeDark: 'Theme: Dark (click to switch to System)',
     resetNothing: 'Nothing to reset.',
   },
   es: {
@@ -282,6 +285,9 @@ const TRANSLATIONS: Record<UiLang, Record<string, string>> = {
     resetSection: 'Restablecer',
     resetSectionTitle: 'Restablecer esta sección a sus valores por defecto',
     resetNothing: 'No hay nada que restablecer.',
+    themeSystem: 'Tema: Sistema (clic para cambiar a Claro)',
+    themeLight: 'Tema: Claro (clic para cambiar a Oscuro)',
+    themeDark: 'Tema: Oscuro (clic para cambiar a Sistema)',
   },
 };
 
@@ -290,6 +296,18 @@ function detectUiLang(): UiLang {
   const langs = (typeof navigator !== 'undefined' && (navigator as any).languages) || [nav];
   for (const l of langs) if (typeof l === 'string' && l.toLowerCase().startsWith('es')) return 'es';
   return 'en';
+}
+
+type ThemePref = 'system' | 'light' | 'dark';
+type ResolvedTheme = 'light' | 'dark';
+
+function systemTheme(): ResolvedTheme {
+  if (typeof window === 'undefined' || !window.matchMedia) return 'dark';
+  return window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
+}
+
+function resolveTheme(pref: ThemePref): ResolvedTheme {
+  return pref === 'system' ? systemTheme() : pref;
 }
 
 function parseSrt(srt: string): Cue[] {
@@ -489,6 +507,7 @@ type PersistedSettings = {
   language?: string;
   model?: 'tiny' | 'medium' | 'large';
   style?: SubtitleStyle;
+  theme?: ThemePref;
 };
 
 function loadSettings(): PersistedSettings {
@@ -524,6 +543,8 @@ export default function App() {
   const [proc, setProc] = useState<ProcessState>({ phase: 'idle' });
   const [currentTime, setCurrentTime] = useState(0);
   const [uiLang, setUiLang] = useState<UiLang>(() => initial.uiLang ?? detectUiLang());
+  const [themePref, setThemePref] = useState<ThemePref>(() => initial.theme ?? 'system');
+  const [resolvedTheme, setResolvedTheme] = useState<ResolvedTheme>(() => resolveTheme(initial.theme ?? 'system'));
 
   // Subtitles (independent of process phase now)
   const [srtPath, setSrtPath] = useState<string | null>(null);
@@ -705,7 +726,29 @@ export default function App() {
   const toggleSection = (id: string) =>
     setOpenSections(s => ({ ...s, [id]: !s[id] }));
 
-  useEffect(() => { saveSettings({ uiLang, language, model, style }); }, [uiLang, language, model, style]);
+  useEffect(() => { saveSettings({ uiLang, language, model, style, theme: themePref }); }, [uiLang, language, model, style, themePref]);
+
+  useEffect(() => {
+    const next = resolveTheme(themePref);
+    setResolvedTheme(next);
+    document.documentElement.setAttribute('data-theme', next);
+  }, [themePref]);
+
+  useEffect(() => {
+    if (themePref !== 'system' || typeof window === 'undefined' || !window.matchMedia) return;
+    const mq = window.matchMedia('(prefers-color-scheme: light)');
+    const onChange = () => {
+      const next: ResolvedTheme = mq.matches ? 'light' : 'dark';
+      setResolvedTheme(next);
+      document.documentElement.setAttribute('data-theme', next);
+    };
+    mq.addEventListener('change', onChange);
+    return () => mq.removeEventListener('change', onChange);
+  }, [themePref]);
+
+  const cycleTheme = () => {
+    setThemePref(p => (p === 'system' ? 'light' : p === 'light' ? 'dark' : 'system'));
+  };
 
   useEffect(() => { setStorageStats(autosaveStats(videoPath)); }, [videoPath]);
 
@@ -1353,6 +1396,37 @@ export default function App() {
             </span>
           )}
         </button>
+        <button
+          type="button"
+          className="app-titlebar-theme no-drag"
+          onClick={cycleTheme}
+          title={
+            themePref === 'system' ? t('themeSystem')
+              : themePref === 'light' ? t('themeLight')
+              : t('themeDark')
+          }
+          aria-label={
+            themePref === 'system' ? t('themeSystem')
+              : themePref === 'light' ? t('themeLight')
+              : t('themeDark')
+          }
+        >
+          {themePref === 'system' ? (
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <rect x="3" y="4" width="18" height="13" rx="1" />
+              <path d="M8 21h8M12 17v4" />
+            </svg>
+          ) : themePref === 'light' ? (
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <circle cx="12" cy="12" r="4" />
+              <path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41" />
+            </svg>
+          ) : (
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" />
+            </svg>
+          )}
+        </button>
         <div className="app-titlebar-lang no-drag">
           <Select
             size="sm"
@@ -1677,6 +1751,7 @@ export default function App() {
                       splitMarkers={splitMarkers}
                       selectedMarker={selectedMarker}
                       onSelectMarker={setSelectedMarker}
+                      theme={resolvedTheme}
                     />
                   </div>
                 </div>
