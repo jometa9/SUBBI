@@ -2,6 +2,8 @@ import { app, BrowserWindow, ipcMain, dialog, protocol } from 'electron';
 import path from 'path';
 import { transcribe, type TranscribeOptions } from './transcriber';
 import { burn, type BurnOptions } from './burner';
+import { detectSilences, cutSilences, extractPeaks, type DetectSilencesOptions, type CutSilencesOptions } from './silence';
+import { exportVideo, type ExportOptions } from './export';
 
 const isDev = !app.isPackaged;
 
@@ -68,5 +70,25 @@ ipcMain.handle('subbi:transcribe', async (_e, opts: TranscribeOptions) => {
 ipcMain.handle('subbi:burn', async (_e, opts: BurnOptions) => {
   return await burn(opts, (pct, line) => {
     mainWindow?.webContents.send('subbi:progress', { kind: 'burn', pct, line });
+  });
+});
+
+ipcMain.handle('subbi:detectSilences', async (_e, opts: DetectSilencesOptions) => {
+  return await detectSilences(opts);
+});
+
+ipcMain.handle('subbi:extractPeaks', async (_e, opts: { videoPath: string; targetBins?: number }) => {
+  return await extractPeaks(opts.videoPath, opts.targetBins ?? 2000);
+});
+
+ipcMain.handle('subbi:cutSilences', async (_e, opts: CutSilencesOptions) => {
+  return await cutSilences(opts, (pct, line) => {
+    mainWindow?.webContents.send('subbi:progress', { kind: 'cut', pct, line });
+  });
+});
+
+ipcMain.handle('subbi:exportVideo', async (_e, opts: ExportOptions) => {
+  return await exportVideo(opts, (pct, line) => {
+    mainWindow?.webContents.send('subbi:progress', { kind: 'export', pct, line });
   });
 });

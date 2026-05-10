@@ -7,6 +7,10 @@ contextBridge.exposeInMainWorld('subbi', {
   },
   transcribe: (opts: any) => ipcRenderer.invoke('subbi:transcribe', opts),
   burn: (opts: any) => ipcRenderer.invoke('subbi:burn', opts),
+  detectSilences: (opts: any) => ipcRenderer.invoke('subbi:detectSilences', opts),
+  cutSilences: (opts: any) => ipcRenderer.invoke('subbi:cutSilences', opts),
+  exportVideo: (opts: any) => ipcRenderer.invoke('subbi:exportVideo', opts),
+  extractPeaks: (opts: any) => ipcRenderer.invoke('subbi:extractPeaks', opts),
   onProgress: (cb: (evt: any) => void) => {
     const listener = (_e: any, evt: any) => cb(evt);
     ipcRenderer.on('subbi:progress', listener);
