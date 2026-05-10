@@ -1,5 +1,6 @@
 import { app, BrowserWindow, ipcMain, dialog, protocol } from 'electron';
 import path from 'path';
+import fs from 'fs';
 import { transcribe, type TranscribeOptions } from './transcriber';
 import { burn, type BurnOptions } from './burner';
 import { detectSilences, cutSilences, extractPeaks, type DetectSilencesOptions, type CutSilencesOptions } from './silence';
@@ -124,4 +125,9 @@ ipcMain.handle('subbi:exportVideo', async (_e, opts: ExportOptions) => {
   return await exportVideo(opts, (pct, line) => {
     mainWindow?.webContents.send('subbi:progress', { kind: 'export', pct, line });
   });
+});
+
+ipcMain.handle('subbi:writeSrt', async (_e, opts: { srtPath: string; content: string }) => {
+  fs.writeFileSync(opts.srtPath, opts.content, 'utf8');
+  return opts.srtPath;
 });

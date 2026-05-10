@@ -22,11 +22,19 @@ interface Props {
   currentTime: number;
   onToggleRegion: (id: string) => void;
   onUpdateRegion?: (id: string, start: number, end: number) => void;
+  splitMarkers?: number[];
+  selectedMarker?: number | null;
+  onSelectMarker?: (time: number | null) => void;
   height?: number;
 }
 
 const SilenceTimeline = React.forwardRef<SilenceTimelineHandle, Props>(function SilenceTimeline(
-  { videoEl, peaks, duration, regions, currentTime, onToggleRegion, onUpdateRegion, height = 84 },
+  {
+    videoEl, peaks, duration, regions, currentTime,
+    onToggleRegion, onUpdateRegion,
+    splitMarkers = [], selectedMarker = null, onSelectMarker,
+    height = 84,
+  },
   ref
 ) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -138,7 +146,40 @@ const SilenceTimeline = React.forwardRef<SilenceTimelineHandle, Props>(function 
   // Note: with `media: videoEl`, wavesurfer subscribes to the video's `timeupdate`
   // and moves the cursor automatically. We don't need to seek manually here.
 
-  return <div ref={containerRef} className="w-full" style={{ minHeight: height }} />;
+  const showMarkers = duration > 0 && splitMarkers.length > 0;
+
+  return (
+    <div
+      className="st-wrap w-full relative"
+      style={{ minHeight: height }}
+      onClick={(e) => {
+        // Click on empty area (not a marker) clears selection.
+        if ((e.target as HTMLElement).dataset.splitMarker == null) {
+          onSelectMarker?.(null);
+        }
+      }}
+    >
+      <div ref={containerRef} className="w-full" style={{ minHeight: height }} />
+      {showMarkers && splitMarkers.map((t, i) => {
+        const left = (t / duration) * 100;
+        const isSel = selectedMarker != null && Math.abs(selectedMarker - t) < 1e-6;
+        return (
+          <button
+            key={`${i}-${t.toFixed(3)}`}
+            type="button"
+            data-split-marker="1"
+            className={'st-marker' + (isSel ? ' is-selected' : '')}
+            style={{ left: `${left}%` }}
+            title={`${t.toFixed(2)}s`}
+            onClick={(e) => {
+              e.stopPropagation();
+              onSelectMarker?.(isSel ? null : t);
+            }}
+          />
+        );
+      })}
+    </div>
+  );
 });
 
 export default SilenceTimeline;

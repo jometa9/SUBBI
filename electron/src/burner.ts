@@ -160,6 +160,7 @@ export async function burn(
   const vf = `subtitles='${escapeForFilter(srtToUse)}':force_style='${styleParts}'`;
 
   let totalSec: number | null = null;
+  onProgress(0, 'evt:burn.starting');
 
   return await new Promise<string>((resolve, reject) => {
     const child = spawn(ffmpeg, [
@@ -171,6 +172,7 @@ export async function burn(
     ]);
 
     let err = '';
+    let lastMilestone = -1;
     child.stderr.on('data', (d) => {
       const s = d.toString();
       err += s;
@@ -180,7 +182,13 @@ export async function burn(
         const t = parseTimeFromStderr(line);
         if (t != null && totalSec) {
           const pct = Math.min(100, (t / totalSec) * 100);
-          onProgress(pct, line.trim());
+          const milestone = Math.floor(pct / 10) * 10;
+          if (milestone > lastMilestone && milestone > 0 && milestone < 100) {
+            lastMilestone = milestone;
+            onProgress(pct, `evt:burn.progress:${milestone}`);
+          } else {
+            onProgress(pct, '');
+          }
         }
       }
     });
@@ -191,10 +199,10 @@ export async function burn(
         try { fs.unlinkSync(srtToUse); } catch { /* ignore */ }
       }
       if (code === 0) {
-        onProgress(100, 'done');
+        onProgress(100, 'evt:burn.done');
         resolve(outPath);
       } else {
-        reject(new Error(`ffmpeg burn failed (${code}): ${err.slice(-500)}`));
+        reject(new Error('evt:err.burn'));
       }
     });
   });

@@ -45,9 +45,12 @@ interface SubbiAPI {
     crop?: SubbiCropNormalized | null;
     subtitles?: { srtPath: string; style: SubbiStyle } | null;
     volumeDb?: number;
+    noiseGateDb?: number | null;
+    outputPath?: string;
   }): Promise<string>;
   extractPeaks(opts: { videoPath: string; targetBins?: number }):
     Promise<{ peaks: number[]; duration: number; sampleRate: number }>;
+  writeSrt(opts: { srtPath: string; content: string }): Promise<string>;
   onProgress(cb: (evt: SubbiProgressEvent) => void): () => void;
 }
 

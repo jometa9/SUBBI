@@ -46,8 +46,8 @@ export async function transcribe(
   const ffmpeg = findFfmpeg();
   const bin = whisperBinary();
   const model = modelPath(opts.model);
-  if (!fs.existsSync(bin)) throw new Error(`whisper-cli no encontrado: ${bin}`);
-  if (!fs.existsSync(model)) throw new Error(`Modelo no encontrado: ${model}`);
+  if (!fs.existsSync(bin)) throw new Error('evt:err.transcriberMissing');
+  if (!fs.existsSync(model)) throw new Error('evt:err.modelMissing');
 
   const tmpDir = path.join(os.tmpdir(), 'subbi');
   fs.mkdirSync(tmpDir, { recursive: true });
@@ -55,7 +55,9 @@ export async function transcribe(
 
   try {
     // 1) Extract WAV 16kHz mono from video
+    onProgress(0, 'evt:transcribe.extractingAudio');
     let totalSec: number | null = null;
+    let lastExtractMilestone = -1;
     await new Promise<void>((resolve, reject) => {
       const child = spawn(ffmpeg, [
         '-y', '-hide_banner', '-stats',
@@ -73,16 +75,25 @@ export async function transcribe(
             const t = parseTimeFromStderr(line);
             if (t != null) {
               const pct = Math.min(100, (t / totalSec) * 100 * 0.15); // extract = 0..15%
-              onProgress(pct, `[ffmpeg-extract] ${line.trim()}`);
+              const phasePct = Math.min(100, Math.round((t / totalSec) * 100));
+              const milestone = Math.floor(phasePct / 25) * 25;
+              if (milestone > lastExtractMilestone && milestone > 0 && milestone < 100) {
+                lastExtractMilestone = milestone;
+                onProgress(pct, `evt:transcribe.extractingProgress:${milestone}`);
+              } else {
+                onProgress(pct, '');
+              }
             }
           }
         }
       });
       child.on('error', reject);
-      child.on('close', (code) => code === 0 ? resolve() : reject(new Error(`ffmpeg extract failed (${code}): ${err.slice(-400)}`)));
+      child.on('close', (code) => code === 0 ? resolve() : reject(new Error('evt:err.audioPrep')));
     });
+    onProgress(15, 'evt:transcribe.audioReady');
 
     // 2) Run whisper
+    onProgress(15, 'evt:transcribe.starting');
     const threads = Math.max(2, Math.floor(os.cpus().length / 2));
     const args = [
       '-m', model,
@@ -99,45 +110,37 @@ export async function transcribe(
       '-pp',
     ];
 
+    let lastWhisperMilestone = -1;
     await new Promise<void>((resolve, reject) => {
       const child = spawn(bin, args, { stdio: ['ignore', 'pipe', 'pipe'] });
       let err = '';
-      child.stdout.on('data', (d) => {
-        const s = d.toString();
+      const handleOut = (s: string) => {
         for (const line of s.split(/\r?\n/)) {
           if (!line) continue;
-          // Whisper prints "progress = NN%"
-          const m = line.match(/progress\s*=\s*(\d+)%/);
-          if (m) {
-            const whisperPct = +m[1];
-            // map whisper 0..100 -> overall 15..98
-            const pct = 15 + (whisperPct / 100) * 83;
-            onProgress(pct, line.trim());
-          } else {
-            onProgress(15, line.trim());
-          }
-        }
-      });
-      child.stderr.on('data', (d) => {
-        const s = d.toString();
-        err += s;
-        for (const line of s.split(/\r?\n/)) {
-          if (!line.trim()) continue;
           const m = line.match(/progress\s*=\s*(\d+)%/);
           if (m) {
             const whisperPct = +m[1];
             const pct = 15 + (whisperPct / 100) * 83;
-            onProgress(pct, line.trim());
+            const milestone = Math.floor(whisperPct / 10) * 10;
+            if (milestone > lastWhisperMilestone && milestone > 0 && milestone < 100) {
+              lastWhisperMilestone = milestone;
+              onProgress(pct, `evt:transcribe.progress:${milestone}`);
+            } else {
+              onProgress(pct, '');
+            }
           }
         }
-      });
+      };
+      child.stdout.on('data', (d) => handleOut(d.toString()));
+      child.stderr.on('data', (d) => { const s = d.toString(); err += s; handleOut(s); });
       child.on('error', reject);
-      child.on('close', (code) => code === 0 ? resolve() : reject(new Error(`whisper-cli failed (${code}): ${err.slice(-400)}`)));
+      child.on('close', (code) => code === 0 ? resolve() : reject(new Error('evt:err.transcribe')));
     });
 
     // 3) Read SRT next to wav
+    onProgress(98, 'evt:transcribe.savingSubtitles');
     const srtPath = `${wavPath}.srt`;
-    if (!fs.existsSync(srtPath)) throw new Error('whisper no generó .srt');
+    if (!fs.existsSync(srtPath)) throw new Error('evt:err.subtitlesMissing');
     const srt = fs.readFileSync(srtPath, 'utf8');
 
     // Move SRT next to video
@@ -147,7 +150,7 @@ export async function transcribe(
     );
     try { fs.copyFileSync(srtPath, finalSrt); } catch { /* keep tmp if copy fails */ }
 
-    onProgress(100, 'done');
+    onProgress(100, 'evt:transcribe.done');
     return { srtPath: fs.existsSync(finalSrt) ? finalSrt : srtPath, srt };
   } finally {
     try { fs.unlinkSync(wavPath); } catch { /* ignore */ }

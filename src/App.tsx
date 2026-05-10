@@ -5,7 +5,7 @@ import Select from './Select';
 
 const IS_MAC = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform);
 
-type Cue = { start: number; end: number; text: string };
+type Cue = { start: number; end: number; text: string; edited?: boolean };
 
 type SubtitleStyle = {
   fontName: string;
@@ -58,6 +58,7 @@ const TRANSLATIONS: Record<UiLang, Record<string, string>> = {
     dropNow: 'Release to drop',
     orClick: 'or click to choose',
     sampleSubtitle: 'Sample subtitle',
+    clickToEditCue: 'Click to edit subtitle (Enter to save · Esc to cancel)',
     transcription: 'Transcription',
     language: 'Language',
     langSpanish: 'Spanish', langEnglish: 'English', langPortuguese: 'Portuguese', langAuto: 'Auto',
@@ -81,9 +82,18 @@ const TRANSLATIONS: Record<UiLang, Record<string, string>> = {
     aspectRatio: 'Aspect ratio',
     enableCrop: 'Enable crop',
     resetCrop: 'Reset',
+    disableCrop: 'Disable',
+    cropPixels: 'Pixels',
+    cropX: 'X',
+    cropY: 'Y',
+    cropW: 'W',
+    cropH: 'H',
     audioSection: 'Audio',
     audioGain: 'Volume gain',
     audioGainHint: 'Boost or attenuate the audio track on export.',
+    audioGate: 'Noise gate',
+    audioGateHint: 'Mute audio below the threshold (keeps voice, drops low-level noise).',
+    audioGateOff: 'Off',
     exportSection: 'Export',
     exportNow: 'Export video',
     exporting: 'Exporting',
@@ -110,6 +120,50 @@ const TRANSLATIONS: Record<UiLang, Record<string, string>> = {
     back5s: '−5s',
     fwd5s: '+5s',
     resetAudio: 'Reset',
+    splitHere: 'Split here',
+    removeSplit: 'Remove split',
+    splitsBadge: 'splits',
+    exportPartsHint: 'Export will produce one file per segment.',
+    'log.transcribe.extractingAudio': 'Preparing audio…',
+    'log.transcribe.extractingProgress': 'Preparing audio: {pct}%',
+    'log.transcribe.audioReady': 'Audio ready.',
+    'log.transcribe.starting': 'Generating subtitles…',
+    'log.transcribe.progress': 'Generating subtitles: {pct}%',
+    'log.transcribe.savingSubtitles': 'Saving subtitle file…',
+    'log.transcribe.done': 'Subtitles ready.',
+    'log.export.starting': 'Preparing export…',
+    'log.export.progress': 'Exporting: {pct}%',
+    'log.export.done': 'Export finished.',
+    'log.cut.starting': 'Trimming silences…',
+    'log.cut.progress': 'Trimming: {pct}%',
+    'log.cut.done': 'Trim finished.',
+    'log.burn.starting': 'Burning subtitles…',
+    'log.burn.progress': 'Burning: {pct}%',
+    'log.burn.done': 'Burn finished.',
+    'err.engineMissing': 'A required component is missing.',
+    'err.transcriberMissing': 'The transcription engine is missing.',
+    'err.modelMissing': 'The transcription model is missing.',
+    'err.audioPrep': 'Could not prepare the audio for transcription.',
+    'err.transcribe': 'Transcription failed.',
+    'err.subtitlesMissing': 'No subtitles were produced.',
+    'err.export': 'Export failed.',
+    'err.cut': 'Trimming failed.',
+    'err.burn': 'Subtitle burn failed.',
+    'err.duration': 'Could not read the video duration.',
+    'err.waveform': 'Could not generate the waveform.',
+    'err.noSegments': 'There are no segments to keep.',
+    storageLabel: 'Saved · {size}',
+    storageTooltip: 'Auto-saved edits use {total} across {count} project(s). Other projects: {others} ({othersCount}).',
+    clearOthers: 'Clear others',
+    clearOthersTitle: 'Remove auto-saved data for {count} other project(s) — frees {size}.',
+    clearOthersNone: 'No other projects saved.',
+    confirmClearOthers: 'Remove auto-saved edits for {count} other project(s)? This will free {size}. The current project is kept.',
+    resetEdits: 'Reset edits',
+    resetEditsTitle: 'Remove all edits and start from scratch (keeps the transcription).',
+    resetConfirm: 'Click again to confirm',
+    resetSection: 'Reset',
+    resetSectionTitle: 'Reset this section to defaults',
+    resetNothing: 'Nothing to reset.',
   },
   es: {
     openVideo: 'Abrir video',
@@ -117,6 +171,7 @@ const TRANSLATIONS: Record<UiLang, Record<string, string>> = {
     dropNow: 'Soltalo ahora',
     orClick: 'o hacé click para elegir',
     sampleSubtitle: 'Subtítulo de ejemplo',
+    clickToEditCue: 'Click para editar el subtítulo (Enter para guardar · Esc para cancelar)',
     transcription: 'Transcripción',
     language: 'Idioma',
     langSpanish: 'Español', langEnglish: 'Inglés', langPortuguese: 'Portugués', langAuto: 'Auto',
@@ -140,9 +195,18 @@ const TRANSLATIONS: Record<UiLang, Record<string, string>> = {
     aspectRatio: 'Relación de aspecto',
     enableCrop: 'Activar recorte',
     resetCrop: 'Restablecer',
+    disableCrop: 'Desactivar',
+    cropPixels: 'Píxeles',
+    cropX: 'X',
+    cropY: 'Y',
+    cropW: 'W',
+    cropH: 'H',
     audioSection: 'Audio',
     audioGain: 'Ganancia de volumen',
     audioGainHint: 'Subí o bajá el audio del video al exportar.',
+    audioGate: 'Puerta de ruido',
+    audioGateHint: 'Silencia el audio por debajo del umbral (mantiene la voz, baja el ruido).',
+    audioGateOff: 'Apagada',
     exportSection: 'Exportar',
     exportNow: 'Exportar video',
     exporting: 'Exportando',
@@ -169,6 +233,50 @@ const TRANSLATIONS: Record<UiLang, Record<string, string>> = {
     back5s: '−5s',
     fwd5s: '+5s',
     resetAudio: 'Restablecer',
+    splitHere: 'Cortar aquí',
+    removeSplit: 'Quitar corte',
+    splitsBadge: 'cortes',
+    exportPartsHint: 'Se exportará un archivo por cada segmento.',
+    'log.transcribe.extractingAudio': 'Preparando audio…',
+    'log.transcribe.extractingProgress': 'Preparando audio: {pct}%',
+    'log.transcribe.audioReady': 'Audio listo.',
+    'log.transcribe.starting': 'Generando subtítulos…',
+    'log.transcribe.progress': 'Generando subtítulos: {pct}%',
+    'log.transcribe.savingSubtitles': 'Guardando archivo de subtítulos…',
+    'log.transcribe.done': 'Subtítulos listos.',
+    'log.export.starting': 'Preparando exportación…',
+    'log.export.progress': 'Exportando: {pct}%',
+    'log.export.done': 'Exportación finalizada.',
+    'log.cut.starting': 'Quitando silencios…',
+    'log.cut.progress': 'Quitando silencios: {pct}%',
+    'log.cut.done': 'Silencios quitados.',
+    'log.burn.starting': 'Incrustando subtítulos…',
+    'log.burn.progress': 'Incrustando: {pct}%',
+    'log.burn.done': 'Subtítulos incrustados.',
+    'err.engineMissing': 'Falta un componente requerido.',
+    'err.transcriberMissing': 'Falta el motor de transcripción.',
+    'err.modelMissing': 'Falta el modelo de transcripción.',
+    'err.audioPrep': 'No se pudo preparar el audio para transcribir.',
+    'err.transcribe': 'La transcripción falló.',
+    'err.subtitlesMissing': 'No se generaron subtítulos.',
+    'err.export': 'La exportación falló.',
+    'err.cut': 'No se pudieron quitar los silencios.',
+    'err.burn': 'No se pudieron incrustar los subtítulos.',
+    'err.duration': 'No se pudo leer la duración del video.',
+    'err.waveform': 'No se pudo generar la forma de onda.',
+    'err.noSegments': 'No hay segmentos para conservar.',
+    storageLabel: 'Guardado · {size}',
+    storageTooltip: 'Las ediciones autoguardadas ocupan {total} en {count} proyecto(s). Otros proyectos: {others} ({othersCount}).',
+    clearOthers: 'Limpiar otros',
+    clearOthersTitle: 'Borrar el autoguardado de {count} proyecto(s) — libera {size}.',
+    clearOthersNone: 'No hay otros proyectos guardados.',
+    confirmClearOthers: '¿Borrar las ediciones autoguardadas de {count} proyecto(s)? Vas a liberar {size}. El proyecto actual se conserva.',
+    resetEdits: 'Restablecer edits',
+    resetEditsTitle: 'Quitar todas las ediciones y arrancar desde cero (la transcripción se conserva).',
+    resetConfirm: 'Click de nuevo para confirmar',
+    resetSection: 'Restablecer',
+    resetSectionTitle: 'Restablecer esta sección a sus valores por defecto',
+    resetNothing: 'No hay nada que restablecer.',
   },
 };
 
@@ -201,10 +309,26 @@ function parseSrt(srt: string): Cue[] {
   return out;
 }
 
+function formatSrt(cues: Cue[]): string {
+  const pad = (n: number, w = 2) => String(n).padStart(w, '0');
+  const fmt = (sec: number) => {
+    if (!isFinite(sec) || sec < 0) sec = 0;
+    const h = Math.floor(sec / 3600);
+    const m = Math.floor((sec % 3600) / 60);
+    const s = Math.floor(sec % 60);
+    const ms = Math.round((sec - Math.floor(sec)) * 1000);
+    return `${pad(h)}:${pad(m)}:${pad(s)},${pad(ms, 3)}`;
+  };
+  return cues
+    .map((c, i) => `${i + 1}\n${fmt(c.start)} --> ${fmt(c.end)}\n${c.text}\n`)
+    .join('\n');
+}
+
 function resegmentByWords(cues: Cue[], maxWords: number): Cue[] {
   if (!maxWords || maxWords <= 0) return cues;
   const out: Cue[] = [];
   for (const c of cues) {
+    if (c.edited) { out.push(c); continue; }
     const words = c.text.split(/\s+/).filter(Boolean);
     if (words.length <= maxWords) { out.push(c); continue; }
     const chunks: string[] = [];
@@ -252,11 +376,14 @@ type ProjectState = {
   crop: CropRect;
   aspectId: string;
   volumeDb: number;
+  noiseGateDb: number;
+  noiseGateEnabled: boolean;
   srtPath: string | null;
   rawCues: Cue[] | null;
   style: SubtitleStyle;
   language: string;
   model: 'tiny' | 'medium' | 'large';
+  splitMarkers?: number[];
 };
 
 function projectKey(videoPath: string): string {
@@ -274,6 +401,51 @@ function loadProject(videoPath: string): ProjectState | null {
 
 function saveProject(videoPath: string, state: ProjectState) {
   try { localStorage.setItem(projectKey(videoPath), JSON.stringify(state)); } catch {}
+}
+
+function autosaveStats(currentVideoPath: string | null): { total: number; others: number; count: number; othersCount: number } {
+  let total = 0;
+  let others = 0;
+  let count = 0;
+  let othersCount = 0;
+  const currentKey = currentVideoPath ? projectKey(currentVideoPath) : null;
+  try {
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i);
+      if (!k || !k.startsWith(PROJECT_PREFIX)) continue;
+      const v = localStorage.getItem(k) ?? '';
+      const bytes = (k.length + v.length) * 2;
+      total += bytes;
+      count += 1;
+      if (k !== currentKey) { others += bytes; othersCount += 1; }
+    }
+  } catch { /* ignore */ }
+  return { total, others, count, othersCount };
+}
+
+function clearOtherProjects(currentVideoPath: string | null): number {
+  const currentKey = currentVideoPath ? projectKey(currentVideoPath) : null;
+  const toRemove: string[] = [];
+  try {
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i);
+      if (!k || !k.startsWith(PROJECT_PREFIX)) continue;
+      if (k === currentKey) continue;
+      toRemove.push(k);
+    }
+    for (const k of toRemove) localStorage.removeItem(k);
+  } catch { /* ignore */ }
+  return toRemove.length;
+}
+
+function formatBytes(bytes: number): string {
+  if (!bytes || bytes < 0) return '0 B';
+  const units = ['B', 'KB', 'MB', 'GB'];
+  let v = bytes;
+  let i = 0;
+  while (v >= 1024 && i < units.length - 1) { v /= 1024; i++; }
+  const rounded = v >= 100 || i === 0 ? Math.round(v) : v >= 10 ? v.toFixed(1) : v.toFixed(2);
+  return `${rounded} ${units[i]}`;
 }
 
 type PersistedSettings = {
@@ -298,6 +470,13 @@ function saveSettings(s: PersistedSettings) {
 
 const DEFAULT_CROP: CropRect = { x: 0.1, y: 0.1, width: 0.8, height: 0.8 };
 
+// Build the inline style for a Premiere-flat range so the filled portion is lila.
+function rangePct(value: number, min: number, max: number): React.CSSProperties {
+  if (max === min) return { ['--pct' as any]: '0%' };
+  const pct = Math.max(0, Math.min(100, ((value - min) / (max - min)) * 100));
+  return { ['--pct' as any]: `${pct}%` };
+}
+
 export default function App() {
   const initial = useMemo(loadSettings, []);
   const [videoPath, setVideoPath] = useState<string | null>(null);
@@ -313,6 +492,9 @@ export default function App() {
   // Subtitles (independent of process phase now)
   const [srtPath, setSrtPath] = useState<string | null>(null);
   const [rawCues, setRawCues] = useState<Cue[] | null>(null);
+  // Inline subtitle editing on the preview overlay
+  const [editingCue, setEditingCue] = useState<Cue | null>(null);
+  const [editingText, setEditingText] = useState<string>('');
 
   // Silence
   const [silenceRegions, setSilenceRegions] = useState<SilenceRegion[]>([]);
@@ -331,6 +513,109 @@ export default function App() {
 
   // Audio gain (dB) applied on export
   const [volumeDb, setVolumeDb] = useState<number>(0);
+  // Noise gate threshold (dB) — anything below is silenced. -60..-1.
+  const [noiseGateDb, setNoiseGateDb] = useState<number>(-40);
+  const [noiseGateEnabled, setNoiseGateEnabled] = useState<boolean>(false);
+
+  // Split markers (sorted ascending). On export, produce one file per segment between markers.
+  const [splitMarkers, setSplitMarkers] = useState<number[]>([]);
+  const [selectedMarker, setSelectedMarker] = useState<number | null>(null);
+
+  function addSplitAtCurrent() {
+    if (!videoDuration) return;
+    const t = Math.max(0, Math.min(videoDuration, currentTime));
+    setSplitMarkers(prev => {
+      // Avoid duplicates within ~50ms.
+      if (prev.some(m => Math.abs(m - t) < 0.05)) return prev;
+      return [...prev, t].sort((a, b) => a - b);
+    });
+  }
+  function removeSelectedMarker() {
+    if (selectedMarker == null) return;
+    setSplitMarkers(prev => prev.filter(m => Math.abs(m - selectedMarker) > 1e-6));
+    setSelectedMarker(null);
+  }
+
+  // Two-stage confirm for reset buttons. Tracks which key (e.g. 'all', 'crop'…)
+  // is currently awaiting a second click. Auto-cancels on outside click & timeout.
+  const [confirmReset, setConfirmReset] = useState<string | null>(null);
+  const confirmTimerRef = useRef<number | null>(null);
+  function armReset(key: string) {
+    if (confirmTimerRef.current) window.clearTimeout(confirmTimerRef.current);
+    setConfirmReset(key);
+    confirmTimerRef.current = window.setTimeout(() => setConfirmReset(null), 3500);
+  }
+  function clearArmedReset() {
+    if (confirmTimerRef.current) window.clearTimeout(confirmTimerRef.current);
+    confirmTimerRef.current = null;
+    setConfirmReset(null);
+  }
+  useEffect(() => {
+    if (!confirmReset) return;
+    const onDocClick = (e: MouseEvent) => {
+      const t = e.target as HTMLElement | null;
+      if (t && t.closest('[data-reset-key="' + confirmReset + '"]')) return;
+      clearArmedReset();
+    };
+    document.addEventListener('mousedown', onDocClick);
+    return () => document.removeEventListener('mousedown', onDocClick);
+  }, [confirmReset]);
+
+  function resetCrop() {
+    setCrop(DEFAULT_CROP);
+    setAspectId('free');
+    setCropEnabled(false);
+  }
+  function resetSilence() {
+    setSilenceRegions([]);
+    setThresholdDb(-30);
+    setAutoThreshold(true);
+    setMinSilenceDur(0.5);
+  }
+  function resetAudio() {
+    setVolumeDb(0);
+    setNoiseGateDb(-40);
+    setNoiseGateEnabled(false);
+  }
+  function resetStyle() { setStyle({ ...DEFAULT_STYLE }); }
+  function resetSplits() {
+    setSplitMarkers([]);
+    setSelectedMarker(null);
+  }
+  function renderSectionReset(key: string, run: () => void, canReset: boolean) {
+    const armed = confirmReset === key;
+    return (
+      <span
+        role="button"
+        data-reset-key={key}
+        className={'pr-section-reset' + (armed ? ' is-confirming' : '') + (!canReset ? ' is-disabled' : '')}
+        title={armed ? t('resetConfirm') : t('resetSectionTitle')}
+        aria-disabled={!canReset}
+        onMouseDown={(e) => e.stopPropagation()}
+        onClick={(e) => {
+          e.stopPropagation();
+          if (!canReset) return;
+          if (armed) { run(); clearArmedReset(); }
+          else armReset(key);
+        }}>
+        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+          <path d="M3 12a9 9 0 1 0 3-6.7" />
+          <polyline points="3 4 3 9 8 9" />
+        </svg>
+      </span>
+    );
+  }
+
+  function resetAllEdits() {
+    resetCrop();
+    resetSilence();
+    resetAudio();
+    resetStyle();
+    resetSplits();
+    // Drop any inline cue edit in progress and re-segment from raw transcription.
+    setEditingCue(null);
+    setEditingText('');
+  }
 
   // Custom video controls
   const [isPlaying, setIsPlaying] = useState(false);
@@ -371,6 +656,8 @@ export default function App() {
 
   useEffect(() => { saveSettings({ uiLang, language, model, style }); }, [uiLang, language, model, style]);
 
+  useEffect(() => { setStorageStats(autosaveStats(videoPath)); }, [videoPath]);
+
   // Block context menu, refresh shortcuts and devtools shortcuts at the renderer level too.
   useEffect(() => {
     const onContextMenu = (e: MouseEvent) => e.preventDefault();
@@ -400,6 +687,22 @@ export default function App() {
   }, []);
 
   const t = (k: keyof typeof TRANSLATIONS['en']) => TRANSLATIONS[uiLang][k] ?? TRANSLATIONS.en[k];
+  // Translate a backend-emitted event key like "evt:transcribe.progress:42" or
+  // "evt:err.transcribe" into a clean, localized message. Returns '' for unknown keys.
+  // Tolerates IPC wrappers that prefix the message ("Error: evt:..." etc.).
+  const tEvt = (raw: string): string => {
+    if (!raw) return '';
+    const m = raw.match(/evt:([A-Za-z]+\.[A-Za-z]+)(?::([0-9]+))?/);
+    if (!m) return '';
+    const key = m[1];
+    const arg = m[2] ?? '';
+    const lookup = key.startsWith('err.') ? key : `log.${key}`;
+    const tbl = TRANSLATIONS[uiLang] as Record<string, string>;
+    const en = TRANSLATIONS.en as Record<string, string>;
+    const tpl = tbl[lookup] ?? en[lookup];
+    if (!tpl) return '';
+    return tpl.replace('{pct}', arg);
+  };
   const videoRef = useRef<HTMLVideoElement>(null);
   const [, bumpVideoEl] = useState(0);
 
@@ -473,21 +776,25 @@ export default function App() {
 
   useEffect(() => {
     const off = window.subbi.onProgress((evt) => {
+      const msg = tEvt(evt.line);
       if (evt.kind === 'transcribe') {
         setProc(p => p.phase === 'transcribing'
-          ? { phase: 'transcribing', pct: evt.pct, log: (p.log + evt.line + '\n').slice(-2000) } : p);
+          ? { phase: 'transcribing', pct: evt.pct, log: msg ? (p.log + msg + '\n').slice(-2000) : p.log } : p);
       } else if (evt.kind === 'export') {
         setProc(p => p.phase === 'exporting'
-          ? { phase: 'exporting', pct: evt.pct, log: (p.log + evt.line + '\n').slice(-2000) } : p);
+          ? { phase: 'exporting', pct: evt.pct, log: msg ? (p.log + msg + '\n').slice(-2000) : p.log } : p);
       }
     });
     return off;
-  }, []);
+  }, [uiLang]);
 
   // Tracks whether the load just happened so the autosave effect doesn't immediately
   // re-write the freshly-restored state (which would be a no-op but adds noise).
   const justLoadedRef = useRef(false);
   const [autosaveTick, setAutosaveTick] = useState<'idle' | 'saved'>('idle');
+  const [storageStats, setStorageStats] = useState<{ total: number; others: number; count: number; othersCount: number }>(
+    () => autosaveStats(null)
+  );
 
   function loadVideo(filePath: string) {
     setVideoPath(filePath);
@@ -508,8 +815,11 @@ export default function App() {
       setCrop(saved.crop ?? DEFAULT_CROP);
       setAspectId(saved.aspectId ?? 'free');
       setVolumeDb(saved.volumeDb ?? 0);
+      setNoiseGateDb(saved.noiseGateDb ?? -40);
+      setNoiseGateEnabled(saved.noiseGateEnabled ?? false);
       setSrtPath(saved.srtPath ?? null);
       setRawCues(saved.rawCues ?? null);
+      setSplitMarkers(saved.splitMarkers ?? []);
       if (saved.style) setStyle(saved.style);
       if (saved.language) setLanguage(saved.language);
       if (saved.model) setModel(saved.model);
@@ -522,7 +832,11 @@ export default function App() {
       setCrop(DEFAULT_CROP);
       setAspectId('free');
       setVolumeDb(0);
+      setNoiseGateDb(-40);
+      setNoiseGateEnabled(false);
+      setSplitMarkers([]);
     }
+    setSelectedMarker(null);
   }
 
   // Autosave: persist the current edit state for this video (debounced).
@@ -532,16 +846,20 @@ export default function App() {
     const handle = setTimeout(() => {
       saveProject(videoPath, {
         silenceRegions, thresholdDb, autoThreshold, meanVolumeDb, minSilenceDur,
-        cropEnabled, crop, aspectId, volumeDb,
+        cropEnabled, crop, aspectId, volumeDb, noiseGateDb, noiseGateEnabled,
         srtPath, rawCues, style, language, model,
+        splitMarkers,
       });
       setAutosaveTick('saved');
+      setStorageStats(autosaveStats(videoPath));
       const t = setTimeout(() => setAutosaveTick('idle'), 1200);
       return () => clearTimeout(t);
     }, 400);
     return () => clearTimeout(handle);
   }, [videoPath, silenceRegions, thresholdDb, autoThreshold, meanVolumeDb, minSilenceDur,
-      cropEnabled, crop, aspectId, volumeDb, srtPath, rawCues, style, language, model]);
+      cropEnabled, crop, aspectId, volumeDb, noiseGateDb, noiseGateEnabled,
+      srtPath, rawCues, style, language, model,
+      splitMarkers]);
 
   useEffect(() => {
     if (!videoPath) return;
@@ -591,7 +909,7 @@ export default function App() {
       })));
       setProc({ phase: 'idle' });
     } catch (err: any) {
-      setProc({ phase: 'error', message: String(err?.message || err) });
+      setProc({ phase: 'error', message: tEvt(String(err?.message || err)) || String(err?.message || err) });
     }
   }
 
@@ -639,7 +957,7 @@ export default function App() {
       setRawCues(parseSrt(r.srt));
       setProc({ phase: 'idle' });
     } catch (err: any) {
-      setProc({ phase: 'error', message: String(err?.message || err) });
+      setProc({ phase: 'error', message: tEvt(String(err?.message || err)) || String(err?.message || err) });
     }
   }
 
@@ -652,22 +970,75 @@ export default function App() {
     const hasSubs = !!(srtPath && cues && cues.length > 0);
     const hasCrop = cropEnabled;
     const hasVolume = Math.abs(volumeDb) > 0.01;
-    if (!hasSilence && !hasSubs && !hasCrop && !hasVolume) {
+    const hasGate = noiseGateEnabled && noiseGateDb < -0.01;
+    const hasSplits = splitMarkers.length > 0;
+    if (!hasSilence && !hasSubs && !hasCrop && !hasVolume && !hasGate && !hasSplits) {
       setProc({ phase: 'error', message: t('nothingToExport') });
       return;
     }
+
+    // Build segments: bounded by split markers.
+    const cuts = [...splitMarkers].sort((a, b) => a - b);
+    const segmentBounds: { start: number; end: number }[] = [];
+    let prev = 0;
+    for (const c of cuts) {
+      if (c > prev + 0.02) segmentBounds.push({ start: prev, end: c });
+      prev = c;
+    }
+    if (videoDuration > prev + 0.02) segmentBounds.push({ start: prev, end: videoDuration });
+    if (segmentBounds.length === 0) segmentBounds.push({ start: 0, end: videoDuration });
+
+    // Within each segment, intersect with silence-keep ranges.
+    const baseKeep = hasSilence ? buildKeepRanges() : null;
+    function rangesForSegment(seg: { start: number; end: number }) {
+      if (!baseKeep) return [{ start: seg.start, end: seg.end }];
+      return baseKeep
+        .map(r => ({ start: Math.max(r.start, seg.start), end: Math.min(r.end, seg.end) }))
+        .filter(r => r.end - r.start > 0.02);
+    }
+
+    // Output paths.
+    const sep = videoPath.includes('\\') ? '\\' : '/';
+    const dir = videoPath.substring(0, videoPath.lastIndexOf(sep));
+    const file = videoPath.substring(videoPath.lastIndexOf(sep) + 1);
+    const dot = file.lastIndexOf('.');
+    const base = dot > 0 ? file.substring(0, dot) : file;
+    const ext = dot > 0 ? file.substring(dot) : '.mp4';
+    const multi = segmentBounds.length > 1;
+
     setProc({ phase: 'exporting', pct: 0, log: '' });
     try {
-      const out = await window.subbi.exportVideo({
-        videoPath,
-        keepRanges: hasSilence ? buildKeepRanges() : undefined,
-        crop: hasCrop ? crop : null,
-        subtitles: hasSubs ? { srtPath: srtPath!, style } : null,
-        volumeDb: hasVolume ? volumeDb : 0,
-      });
-      setProc({ phase: 'exported', outPath: out });
+      const outputs: string[] = [];
+      const total = segmentBounds.length;
+      for (let i = 0; i < total; i++) {
+        const seg = segmentBounds[i];
+        const segKeep = rangesForSegment(seg);
+        if (segKeep.length === 0) continue;
+        const useKeep = hasSilence || multi;
+        const outName = multi ? `${base}.subbi.${i + 1}${ext}` : `${base}.subbi${ext}`;
+        const outputPath = `${dir}${sep}${outName}`;
+        // If any cue was edited inline, the SRT on disk already holds the
+        // resegmented form with the user's atoms; tell the burner not to
+        // re-split (would undo the user's added words).
+        const hasEditedCues = !!(rawCues && rawCues.some(c => c.edited));
+        const burnStyle = hasEditedCues ? { ...style, maxWords: 0 } : style;
+        const segOut = await window.subbi.exportVideo({
+          videoPath,
+          keepRanges: useKeep ? segKeep : undefined,
+          crop: hasCrop ? crop : null,
+          subtitles: hasSubs ? { srtPath: srtPath!, style: burnStyle } : null,
+          volumeDb: hasVolume ? volumeDb : 0,
+          noiseGateDb: hasGate ? noiseGateDb : null,
+          outputPath,
+        });
+        outputs.push(segOut);
+        setProc(p => p.phase === 'exporting'
+          ? { ...p, pct: Math.min(100, ((i + 1) / total) * 100) }
+          : p);
+      }
+      setProc({ phase: 'exported', outPath: multi ? `${outputs.length} files in ${dir}` : outputs[0] });
     } catch (err: any) {
-      setProc({ phase: 'error', message: String(err?.message || err) });
+      setProc({ phase: 'error', message: tEvt(String(err?.message || err)) || String(err?.message || err) });
     }
   }
 
@@ -682,6 +1053,40 @@ export default function App() {
     ['--outline' as any]: style.outline,
   };
 
+  function beginEditCue() {
+    if (!activeCue) return;
+    const v = videoRef.current;
+    if (v && !v.paused) v.pause();
+    setEditingCue(activeCue);
+    setEditingText(activeCue.text);
+  }
+
+  function cancelEditCue() {
+    setEditingCue(null);
+    setEditingText('');
+  }
+
+  function commitEditCue() {
+    if (!editingCue) return;
+    const target = editingCue;
+    const newText = editingText.replace(/\s+$/g, '');
+    if (!newText.trim() || newText === target.text || !rawCues) {
+      cancelEditCue();
+      return;
+    }
+    const flattened = resegmentByWords(rawCues, style.maxWords);
+    const updated = flattened.map(c =>
+      Math.abs(c.start - target.start) < 1e-6 && Math.abs(c.end - target.end) < 1e-6
+        ? { ...c, text: newText, edited: true }
+        : c
+    );
+    setRawCues(updated);
+    if (srtPath) {
+      window.subbi.writeSrt({ srtPath, content: formatSrt(updated) }).catch(() => { /* ignore */ });
+    }
+    cancelEditCue();
+  }
+
   const previewText = activeCue
     ? applyCase(activeCue.text, style.textCase)
     : applyCase(t('sampleSubtitle'), style.textCase);
@@ -689,6 +1094,40 @@ export default function App() {
   const isBusy = proc.phase === 'transcribing' || proc.phase === 'detecting' || proc.phase === 'exporting';
 
   const aspectRatio = ASPECT_PRESETS.find(a => a.id === aspectId)?.ratio ?? null;
+
+  // Pixel inputs for crop (derived from normalized values + intrinsic video size).
+  const videoW = videoRef.current?.videoWidth ?? 0;
+  const videoH = videoRef.current?.videoHeight ?? 0;
+  const cropPxX = videoW ? Math.round(crop.x * videoW) : 0;
+  const cropPxY = videoH ? Math.round(crop.y * videoH) : 0;
+  const cropPxW = videoW ? Math.round(crop.width * videoW) : 0;
+  const cropPxH = videoH ? Math.round(crop.height * videoH) : 0;
+
+  function updateCropFromPixels(p: { x?: number; y?: number; w?: number; h?: number }) {
+    if (!videoW || !videoH) return;
+    if (!isFinite(p.x ?? 0) || !isFinite(p.y ?? 0) || !isFinite(p.w ?? 0) || !isFinite(p.h ?? 0)) return;
+    const next = { ...crop };
+    if (p.x != null) next.x = Math.max(0, Math.min(videoW - 1, p.x)) / videoW;
+    if (p.y != null) next.y = Math.max(0, Math.min(videoH - 1, p.y)) / videoH;
+    if (p.w != null) next.width = Math.max(1, Math.min(videoW, p.w)) / videoW;
+    if (p.h != null) next.height = Math.max(1, Math.min(videoH, p.h)) / videoH;
+    // Keep the rect within the frame.
+    if (next.x + next.width > 1) next.x = Math.max(0, 1 - next.width);
+    if (next.y + next.height > 1) next.y = Math.max(0, 1 - next.height);
+    setCrop(next);
+    setAspectId('free');
+    setCropEnabled(true);
+  }
+
+  function handleClearOtherProjects() {
+    if (storageStats.othersCount === 0) return;
+    const msg = (TRANSLATIONS[uiLang]['confirmClearOthers'] ?? TRANSLATIONS.en['confirmClearOthers'])
+      .replace('{count}', String(storageStats.othersCount))
+      .replace('{size}', formatBytes(storageStats.others));
+    if (!window.confirm(msg)) return;
+    clearOtherProjects(videoPath);
+    setStorageStats(autosaveStats(videoPath));
+  }
 
   return (
     <div className="app">
@@ -703,6 +1142,38 @@ export default function App() {
             {autosaveTick === 'saved' ? '● Saved' : '○ Auto'}
           </span>
         )}
+        <span
+          className="app-titlebar-storage"
+          title={
+            t('storageTooltip')
+              .replace('{total}', formatBytes(storageStats.total))
+              .replace('{count}', String(storageStats.count))
+              .replace('{others}', formatBytes(storageStats.others))
+              .replace('{othersCount}', String(storageStats.othersCount))
+          }
+        >
+          {t('storageLabel').replace('{size}', formatBytes(storageStats.total))}
+        </span>
+        <button
+          type="button"
+          className="app-titlebar-clear no-drag"
+          onClick={handleClearOtherProjects}
+          disabled={storageStats.othersCount === 0}
+          title={
+            storageStats.othersCount === 0
+              ? t('clearOthersNone')
+              : t('clearOthersTitle')
+                  .replace('{count}', String(storageStats.othersCount))
+                  .replace('{size}', formatBytes(storageStats.others))
+          }
+        >
+          {t('clearOthers')}
+          {storageStats.othersCount > 0 && (
+            <span className="app-titlebar-clear-badge">
+              {formatBytes(storageStats.others)}
+            </span>
+          )}
+        </button>
         <div className="app-titlebar-lang no-drag">
           <Select
             size="sm"
@@ -738,6 +1209,21 @@ export default function App() {
             <button className="pr-btn pr-btn-ghost vc-fit-btn" onClick={zoomFit} title="Fit (Ctrl 0)">Fit</button>
             <button className="pr-btn pr-btn-ghost vc-fit-btn" onClick={zoomActual} title="Actual pixels (100%)">1:1</button>
             <span className="vc-spacer" />
+            <button
+              data-reset-key="all"
+              className={'pr-btn pr-btn-ghost vc-reset-btn' + (confirmReset === 'all' ? ' is-confirming' : '')}
+              onClick={() => {
+                if (confirmReset === 'all') { resetAllEdits(); clearArmedReset(); }
+                else armReset('all');
+              }}
+              disabled={isBusy}
+              title={t('resetEditsTitle')}>
+              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <path d="M3 12a9 9 0 1 0 3-6.7" />
+                <polyline points="3 4 3 9 8 9" />
+              </svg>
+              <span>{confirmReset === 'all' ? t('resetConfirm') : t('resetEdits')}</span>
+            </button>
             <span className="vc-toolbar-label">Speed</span>
             <Select
               className="vc-speed"
@@ -771,8 +1257,51 @@ export default function App() {
                 onClick={togglePlay}
                 onLoadedMetadata={() => bumpVideoEl(n => n + 1)}
               />
-              <div className={'subtitle-overlay' + (activeCue ? '' : ' sample')} style={overlayStyle}>
-                {previewText}
+              <div
+                className={
+                  'subtitle-overlay'
+                  + (activeCue ? '' : ' sample')
+                  + (activeCue && !editingCue ? ' is-editable' : '')
+                  + (editingCue ? ' is-editing' : '')
+                }
+                style={overlayStyle}
+                onClick={(e) => {
+                  if (!activeCue || editingCue) return;
+                  e.stopPropagation();
+                  beginEditCue();
+                }}
+                title={activeCue && !editingCue ? t('clickToEditCue') : undefined}
+              >
+                {editingCue ? (
+                  <textarea
+                    className="subtitle-edit"
+                    value={editingText}
+                    autoFocus
+                    rows={Math.max(1, editingText.split('\n').length)}
+                    onChange={(e) => setEditingText(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' && !e.shiftKey) {
+                        e.preventDefault();
+                        commitEditCue();
+                      } else if (e.key === 'Escape') {
+                        e.preventDefault();
+                        cancelEditCue();
+                      }
+                      e.stopPropagation();
+                    }}
+                    onBlur={commitEditCue}
+                    onClick={(e) => e.stopPropagation()}
+                    style={{
+                      fontFamily: style.fontName,
+                      fontSize: `${style.fontSize}px`,
+                      color: style.color,
+                      fontWeight: 700,
+                      textAlign: 'center',
+                    }}
+                  />
+                ) : (
+                  previewText
+                )}
               </div>
               {cropEnabled && (
                 <CropOverlay
@@ -809,6 +1338,37 @@ export default function App() {
               <span className="vc-time-sep"> / </span>
               <span className="vc-time-tot">{fmtTime(videoDuration)}</span>
             </div>
+            <button
+              className="vc-btn vc-split-btn"
+              onClick={addSplitAtCurrent}
+              disabled={!videoDuration || isBusy}
+              title={t('splitHere')}
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <circle cx="6" cy="6" r="3"/>
+                <circle cx="6" cy="18" r="3"/>
+                <line x1="20" y1="4" x2="8.12" y2="15.88"/>
+                <line x1="14.47" y1="14.48" x2="20" y2="20"/>
+                <line x1="8.12" y1="8.12" x2="12" y2="12"/>
+              </svg>
+            </button>
+            {selectedMarker != null && (
+              <button
+                className="vc-btn vc-split-remove"
+                onClick={removeSelectedMarker}
+                disabled={isBusy}
+                title={t('removeSplit')}
+              >
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
+                  <path d="M18.3 5.71L12 12.01l-6.3-6.3-1.4 1.4 6.29 6.3-6.29 6.29 1.4 1.42 6.3-6.3 6.3 6.3 1.4-1.42-6.29-6.29 6.29-6.3z"/>
+                </svg>
+              </button>
+            )}
+            {splitMarkers.length > 0 && (
+              <span className="vc-split-count" title={t('exportPartsHint')}>
+                {splitMarkers.length} {t('splitsBadge')}
+              </span>
+            )}
             <span className="vc-spacer" />
             <button
               className="vc-btn"
@@ -828,6 +1388,7 @@ export default function App() {
               max={1}
               step={0.01}
               value={muted ? 0 : volume}
+              style={rangePct(muted ? 0 : volume, 0, 1)}
               onChange={(e) => {
                 const v = videoRef.current;
                 if (!v) return;
@@ -838,37 +1399,82 @@ export default function App() {
           </div>
         )}
         {videoUrl && (
-          <div className="vc-seek-row">
-            <input
-              type="range"
-              className="pr-range vc-seek"
-              min={0}
-              max={Math.max(0.01, videoDuration)}
-              step={0.01}
-              value={Math.min(currentTime, videoDuration || 0)}
-              onChange={(e) => seekTo(+e.target.value)}
-            />
-          </div>
-        )}
-        {videoUrl && (
-          <div className="self-stretch w-full bg-pr-panel border-t border-pr-borderSoft p-2">
-            <SilenceTimeline
-              key={videoUrl}
-              ref={timelineRef}
-              videoEl={videoRef.current}
-              peaks={peaks}
-              duration={videoDuration}
-              regions={silenceRegions}
-              currentTime={currentTime}
-              onToggleRegion={toggleSilence}
-              onUpdateRegion={updateSilence}
-            />
-            {peaks === null && (
-              <div className="text-[10px] text-pr-muted mt-1 px-1">{t('generatingWaveform')}</div>
-            )}
-            {silenceRegions.length > 0 && (
-              <div className="text-[10px] text-pr-muted mt-1 px-1">{t('clickRegionToToggle')}</div>
-            )}
+          <div className="audio-strip">
+            <div className="audio-strip-main">
+              <div className="audio-strip-seek">
+                <input
+                  type="range"
+                  className="pr-range vc-seek"
+                  min={0}
+                  max={Math.max(0.01, videoDuration)}
+                  step={0.01}
+                  value={Math.min(currentTime, videoDuration || 0)}
+                  style={rangePct(Math.min(currentTime, videoDuration || 0), 0, Math.max(0.01, videoDuration))}
+                  onChange={(e) => seekTo(+e.target.value)}
+                />
+              </div>
+              <div className="audio-strip-timeline">
+                <SilenceTimeline
+                  key={videoUrl}
+                  ref={timelineRef}
+                  videoEl={videoRef.current}
+                  peaks={peaks}
+                  duration={videoDuration}
+                  regions={silenceRegions}
+                  currentTime={currentTime}
+                  onToggleRegion={toggleSilence}
+                  onUpdateRegion={updateSilence}
+                  splitMarkers={splitMarkers}
+                  selectedMarker={selectedMarker}
+                  onSelectMarker={setSelectedMarker}
+                />
+                {peaks === null && (
+                  <div className="audio-strip-hint">{t('generatingWaveform')}</div>
+                )}
+                {silenceRegions.length > 0 && (
+                  <div className="audio-strip-hint">{t('clickRegionToToggle')}</div>
+                )}
+              </div>
+            </div>
+            <div className="audio-strip-faders">
+              <div className="audio-fader">
+                <span
+                  className="audio-fader-key has-tip"
+                  data-tip={`${t('audioGain')}: ${volumeDb > 0 ? '+' : ''}${volumeDb} dB`}
+                >G</span>
+                <input
+                  type="range"
+                  min={-30} max={30} step={1}
+                  value={volumeDb}
+                  disabled={!videoPath || isBusy}
+                  onChange={e => setVolumeDb(+e.target.value)}
+                  className="pr-range pr-range-v"
+                  style={rangePct(volumeDb, -30, 30)}
+                />
+                <span className="audio-fader-num">{volumeDb > 0 ? '+' : ''}{volumeDb}</span>
+              </div>
+              <div className={'audio-fader' + (noiseGateEnabled ? '' : ' is-off')}>
+                <button
+                  type="button"
+                  className={'audio-fader-key audio-fader-key-btn has-tip' + (noiseGateEnabled ? ' is-on' : '')}
+                  onClick={() => setNoiseGateEnabled(v => !v)}
+                  disabled={!videoPath || isBusy}
+                  data-tip={`${t('audioGate')}: ${noiseGateEnabled ? `${noiseGateDb} dB` : t('audioGateOff')}`}
+                >N</button>
+                <input
+                  type="range"
+                  min={-60} max={-1} step={1}
+                  value={noiseGateDb}
+                  disabled={!videoPath || isBusy || !noiseGateEnabled}
+                  onChange={e => setNoiseGateDb(+e.target.value)}
+                  className="pr-range pr-range-v"
+                  style={rangePct(noiseGateDb, -60, -1)}
+                />
+                <span className="audio-fader-num">
+                  {noiseGateEnabled ? noiseGateDb : '–'}
+                </span>
+              </div>
+            </div>
           </div>
         )}
       </div>
@@ -900,32 +1506,87 @@ export default function App() {
           <button className="pr-section-head" onClick={() => toggleSection('crop')} type="button">
             <span className="pr-section-chev" />
             <span className="pr-section-title">{t('sectionCrop')}</span>
-            <label className="pr-section-toggle" onClick={(e) => e.stopPropagation()}>
-              <input type="checkbox" checked={cropEnabled} disabled={!videoPath || isBusy}
-                     onChange={e => setCropEnabled(e.target.checked)} />
-              <span>{t('enableCrop')}</span>
-            </label>
+            {cropEnabled && <span className="pr-badge">ON</span>}
+            {renderSectionReset(
+              'crop',
+              resetCrop,
+              cropEnabled || aspectId !== 'free' || crop.x !== DEFAULT_CROP.x || crop.y !== DEFAULT_CROP.y || crop.width !== DEFAULT_CROP.width || crop.height !== DEFAULT_CROP.height
+            )}
           </button>
-          <div className={'pr-section-body' + (cropEnabled ? '' : ' pr-section-body-dim')}>
+          <div className="pr-section-body">
             <div className="pr-row">
               <span className="pr-label">{t('aspectRatio')}</span>
               <div className="pr-aspect-row">
                 {ASPECT_PRESETS.map(p => (
                   <button
                     key={p.id}
-                    disabled={!cropEnabled || isBusy}
-                    onClick={() => setAspectId(p.id)}
-                    className={'pr-chip' + (aspectId === p.id ? ' pr-chip-on' : '')}
+                    disabled={!videoPath || isBusy}
+                    onClick={() => {
+                      setAspectId(p.id);
+                      setCropEnabled(true);
+                    }}
+                    className={'pr-chip' + (cropEnabled && aspectId === p.id ? ' pr-chip-on' : '')}
                   >{p.id === 'free' ? t('aspectFree') : p.label}</button>
                 ))}
               </div>
             </div>
+            <div className="pr-row pr-crop-px-row">
+              <span className="pr-label">{t('cropPixels')}</span>
+              <div className="pr-crop-px-grid">
+                <label className="pr-crop-px-cell">
+                  <span className="pr-crop-px-key">{t('cropX')}</span>
+                  <input
+                    type="number" min={0} step={1}
+                    value={cropPxX}
+                    disabled={!videoPath || !videoW || isBusy}
+                    onChange={(e) => updateCropFromPixels({ x: +e.target.value })}
+                    className="pr-input pr-crop-px-input"
+                  />
+                </label>
+                <label className="pr-crop-px-cell">
+                  <span className="pr-crop-px-key">{t('cropY')}</span>
+                  <input
+                    type="number" min={0} step={1}
+                    value={cropPxY}
+                    disabled={!videoPath || !videoH || isBusy}
+                    onChange={(e) => updateCropFromPixels({ y: +e.target.value })}
+                    className="pr-input pr-crop-px-input"
+                  />
+                </label>
+                <label className="pr-crop-px-cell">
+                  <span className="pr-crop-px-key">{t('cropW')}</span>
+                  <input
+                    type="number" min={1} step={1}
+                    value={cropPxW}
+                    disabled={!videoPath || !videoW || isBusy}
+                    onChange={(e) => updateCropFromPixels({ w: +e.target.value })}
+                    className="pr-input pr-crop-px-input"
+                  />
+                </label>
+                <label className="pr-crop-px-cell">
+                  <span className="pr-crop-px-key">{t('cropH')}</span>
+                  <input
+                    type="number" min={1} step={1}
+                    value={cropPxH}
+                    disabled={!videoPath || !videoH || isBusy}
+                    onChange={(e) => updateCropFromPixels({ h: +e.target.value })}
+                    className="pr-input pr-crop-px-input"
+                  />
+                </label>
+              </div>
+            </div>
             <div className="pr-row pr-row-end">
               <button
-                onClick={() => setCrop(DEFAULT_CROP)}
-                disabled={!cropEnabled || isBusy}
+                onClick={() => { setCrop(DEFAULT_CROP); setAspectId('free'); setCropEnabled(true); }}
+                disabled={!videoPath || isBusy}
                 className="pr-btn pr-btn-ghost">
                 {t('resetCrop')}
+              </button>
+              <button
+                onClick={() => setCropEnabled(false)}
+                disabled={!cropEnabled || isBusy}
+                className="pr-btn pr-btn-ghost">
+                {t('disableCrop')}
               </button>
             </div>
           </div>
@@ -939,6 +1600,11 @@ export default function App() {
             {silenceRegions.length > 0 && (
               <span className="pr-badge">{enabledCount}/{silenceRegions.length} · −{totalCutSec.toFixed(1)}s</span>
             )}
+            {renderSectionReset(
+              'silence',
+              resetSilence,
+              silenceRegions.length > 0 || thresholdDb !== -30 || !autoThreshold || Math.abs(minSilenceDur - 0.5) > 1e-6
+            )}
           </button>
           <div className="pr-section-body">
             <div className="pr-row">
@@ -946,6 +1612,7 @@ export default function App() {
               <input type="range" min={-60} max={-10} step={1} value={thresholdDb}
                      disabled={isBusy || autoThreshold}
                      onChange={e => setThresholdDb(+e.target.value)}
+                     style={rangePct(thresholdDb, -60, -10)}
                      className="pr-range pr-range-flex" />
               <span className="pr-value">{thresholdDb} dB</span>
             </div>
@@ -954,6 +1621,7 @@ export default function App() {
               <input type="range" min={0.1} max={2} step={0.05} value={minSilenceDur}
                      disabled={isBusy}
                      onChange={e => setMinSilenceDur(+e.target.value)}
+                     style={rangePct(minSilenceDur, 0.1, 2)}
                      className="pr-range pr-range-flex" />
               <span className="pr-value">{minSilenceDur.toFixed(2)}s</span>
             </div>
@@ -983,6 +1651,11 @@ export default function App() {
             {Math.abs(volumeDb) > 0.01 && (
               <span className="pr-badge">{volumeDb > 0 ? '+' : ''}{volumeDb} dB</span>
             )}
+            {renderSectionReset(
+              'audio',
+              resetAudio,
+              Math.abs(volumeDb) > 0.01 || noiseGateEnabled || noiseGateDb !== -40
+            )}
           </button>
           <div className="pr-section-body">
             <div className="pr-row">
@@ -990,6 +1663,7 @@ export default function App() {
               <input type="range" min={-30} max={30} step={1} value={volumeDb}
                      disabled={!videoPath || isBusy}
                      onChange={e => setVolumeDb(+e.target.value)}
+                     style={rangePct(volumeDb, -30, 30)}
                      className="pr-range pr-range-flex" />
               <span className="pr-value">{volumeDb > 0 ? '+' : ''}{volumeDb} dB</span>
             </div>
@@ -1002,6 +1676,28 @@ export default function App() {
               </button>
             </div>
             <div className="pr-hint">{t('audioGainHint')}</div>
+
+            <div className="pr-row" style={{ marginTop: 8 }}>
+              <label className="pr-check">
+                <input type="checkbox"
+                       checked={noiseGateEnabled}
+                       disabled={!videoPath || isBusy}
+                       onChange={e => setNoiseGateEnabled(e.target.checked)} />
+                <span>{t('audioGate')}</span>
+              </label>
+            </div>
+            <div className="pr-row">
+              <span className="pr-label">{t('threshold')}</span>
+              <input type="range" min={-60} max={-1} step={1} value={noiseGateDb}
+                     disabled={!videoPath || isBusy || !noiseGateEnabled}
+                     onChange={e => setNoiseGateDb(+e.target.value)}
+                     style={rangePct(noiseGateDb, -60, -1)}
+                     className="pr-range pr-range-flex" />
+              <span className="pr-value">
+                {noiseGateEnabled ? `${noiseGateDb} dB` : t('audioGateOff')}
+              </span>
+            </div>
+            <div className="pr-hint">{t('audioGateHint')}</div>
           </div>
         </div>
 
@@ -1055,6 +1751,11 @@ export default function App() {
           <button className="pr-section-head" onClick={() => toggleSection('style')} type="button">
             <span className="pr-section-chev" />
             <span className="pr-section-title">{t('sectionSubtitleStyle')}</span>
+            {renderSectionReset(
+              'style',
+              resetStyle,
+              (Object.keys(DEFAULT_STYLE) as (keyof SubtitleStyle)[]).some(k => (style as any)[k] !== (DEFAULT_STYLE as any)[k])
+            )}
           </button>
           <div className="pr-section-body">
             <div className="pr-row">
@@ -1070,6 +1771,7 @@ export default function App() {
               <span className="pr-label">{t('size')}</span>
               <input type="range" min={12} max={80} value={style.fontSize}
                      onChange={e => setStyle(s => ({ ...s, fontSize: +e.target.value }))}
+                     style={rangePct(style.fontSize, 12, 80)}
                      className="pr-range pr-range-flex" />
               <span className="pr-value">{style.fontSize}px</span>
             </div>
@@ -1077,6 +1779,7 @@ export default function App() {
               <span className="pr-label">{t('vertical')}</span>
               <input type="range" min={0} max={45} value={style.marginVPct}
                      onChange={e => setStyle(s => ({ ...s, marginVPct: +e.target.value }))}
+                     style={rangePct(style.marginVPct, 0, 45)}
                      className="pr-range pr-range-flex" />
               <span className="pr-value">{style.marginVPct}%</span>
             </div>
@@ -1084,6 +1787,7 @@ export default function App() {
               <span className="pr-label">{t('horizontal')}</span>
               <input type="range" min={-40} max={40} value={style.marginHPct}
                      onChange={e => setStyle(s => ({ ...s, marginHPct: +e.target.value }))}
+                     style={rangePct(style.marginHPct, -40, 40)}
                      className="pr-range pr-range-flex" />
               <span className="pr-value">{style.marginHPct > 0 ? '+' : ''}{style.marginHPct}%</span>
             </div>
@@ -1142,6 +1846,11 @@ export default function App() {
             <span className={'pr-pill' + (enabledCount > 0 ? ' on' : '')}>{t('pillSilence')} {enabledCount > 0 ? enabledCount : ''}</span>
             <span className={'pr-pill' + (Math.abs(volumeDb) > 0.01 ? ' on' : '')}>{t('pillAudio')} {Math.abs(volumeDb) > 0.01 ? `${volumeDb > 0 ? '+' : ''}${volumeDb}dB` : ''}</span>
             <span className={'pr-pill' + (cues && cues.length > 0 ? ' on' : '')}>{t('pillSubs')} {cues && cues.length > 0 ? cues.length : ''}</span>
+            {splitMarkers.length > 0 && (
+              <span className="pr-pill on" title={t('exportPartsHint')}>
+                {splitMarkers.length + 1} {t('splitsBadge').toUpperCase()}
+              </span>
+            )}
           </div>
           <button
             onClick={exportNow}

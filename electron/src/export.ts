@@ -31,6 +31,8 @@ export interface ExportOptions {
   crop?: CropNormalized | null;       // null => no crop
   subtitles?: { srtPath: string; style: SubtitleStyle } | null;
   volumeDb?: number;                  // audio gain in dB; 0 => no change
+  noiseGateDb?: number | null;        // mute audio below this threshold in dB; null/undefined => off
+  outputPath?: string;                // override default `${base}.subbi${ext}`
 }
 
 type Cue = { start: number; end: number; text: string };
@@ -169,7 +171,8 @@ export async function exportVideo(
 
   const ext = path.extname(opts.videoPath) || '.mp4';
   const base = path.basename(opts.videoPath, ext);
-  const outPath = path.join(path.dirname(opts.videoPath), `${base}.subbi${ext}`);
+  const outPath = opts.outputPath
+    ?? path.join(path.dirname(opts.videoPath), `${base}.subbi${ext}`);
   if (fs.existsSync(outPath)) fs.unlinkSync(outPath);
 
   // Normalize keep ranges. If none provided (or provided empty after filter), treat as a single full segment.
@@ -177,7 +180,9 @@ export async function exportVideo(
     .map(r => ({ start: Math.max(0, r.start), end: r.end }))
     .filter(r => r.end - r.start > 0.02)
     .sort((a, b) => a.start - b.start);
-  const willCut = ranges.length > 0 && !(ranges.length === 1 && ranges[0].start === 0);
+  // Any explicit keepRanges trigger trimming. Caller is responsible for passing
+  // them only when an actual cut/segment is wanted.
+  const willCut = ranges.length > 0;
 
   const srtTransformed = opts.subtitles
     ? transformSrt(opts.subtitles.srtPath, opts.subtitles.style)
@@ -204,11 +209,23 @@ export async function exportVideo(
 
   const volumeDb = typeof opts.volumeDb === 'number' && isFinite(opts.volumeDb) ? opts.volumeDb : 0;
   const wantsVolume = Math.abs(volumeDb) > 0.01;
+  const gateDb = typeof opts.noiseGateDb === 'number' && isFinite(opts.noiseGateDb) ? opts.noiseGateDb : null;
+  // Treat 0 dB or above as "off" — gating at full scale silences everything.
+  const wantsGate = gateDb != null && gateDb < -0.01 && gateDb > -90;
   let audioSourceLabel = '[0:a]';
   if (wantsVolume) {
-    filterParts.push(`[0:a]volume=${volumeDb.toFixed(2)}dB[avol]`);
+    filterParts.push(`${audioSourceLabel}volume=${volumeDb.toFixed(2)}dB[avol]`);
     audioSourceLabel = '[avol]';
   }
+  if (wantsGate) {
+    // agate threshold is linear (0..1). Convert from dB.
+    const linear = Math.min(0.999, Math.max(0.0001, Math.pow(10, gateDb! / 20)));
+    filterParts.push(
+      `${audioSourceLabel}agate=threshold=${linear.toFixed(5)}:ratio=20:attack=5:release=120:detection=rms[agate]`
+    );
+    audioSourceLabel = '[agate]';
+  }
+  const wantsAudioFx = wantsVolume || wantsGate;
 
   if (willCut) {
     const n = ranges.length;
@@ -232,8 +249,8 @@ export async function exportVideo(
     progressDuration = ranges.reduce((s, r) => s + (r.end - r.start), 0);
   } else if (preChain.length > 0) {
     mapV = videoSourceLabel;
-    mapA = wantsVolume ? audioSourceLabel : '0:a?';
-  } else if (wantsVolume) {
+    mapA = wantsAudioFx ? audioSourceLabel : '0:a?';
+  } else if (wantsAudioFx) {
     mapV = '0:v';
     mapA = audioSourceLabel;
   } else {
@@ -257,10 +274,12 @@ export async function exportVideo(
   args.push('-movflags', '+faststart', outPath);
 
   let totalSec: number | null = null;
+  onProgress(0, 'evt:export.starting');
 
   return await new Promise<string>((resolve, reject) => {
     const child = spawn(ffmpeg, args);
     let err = '';
+    let lastMilestone = -1;
     child.stderr.on('data', (d) => {
       const s = d.toString();
       err += s;
@@ -271,7 +290,13 @@ export async function exportVideo(
         const t = parseTimeFromStderr(line);
         if (t != null && den) {
           const pct = Math.min(100, (t / den) * 100);
-          onProgress(pct, line.trim());
+          const milestone = Math.floor(pct / 10) * 10;
+          if (milestone > lastMilestone && milestone > 0 && milestone < 100) {
+            lastMilestone = milestone;
+            onProgress(pct, `evt:export.progress:${milestone}`);
+          } else {
+            onProgress(pct, '');
+          }
         }
       }
     });
@@ -281,10 +306,10 @@ export async function exportVideo(
         try { fs.unlinkSync(srtTransformed); } catch { /* ignore */ }
       }
       if (code === 0) {
-        onProgress(100, 'done');
+        onProgress(100, 'evt:export.done');
         resolve(outPath);
       } else {
-        reject(new Error(`ffmpeg export failed (${code}): ${err.slice(-600)}`));
+        reject(new Error('evt:err.export'));
       }
     });
   });

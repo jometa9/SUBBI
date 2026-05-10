@@ -69,7 +69,7 @@ export function findFfmpeg(): string {
     }
   }
 
-  throw new Error('ffmpeg no encontrado.');
+  throw new Error('evt:err.engineMissing');
 }
 
 // Read total duration via ffprobe-less: parse from stderr "Duration: HH:MM:SS.ms"

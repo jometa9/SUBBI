@@ -40,7 +40,7 @@ function ffprobeDuration(ffmpeg: string, videoPath: string): Promise<number> {
     child.on('error', reject);
     child.on('close', () => {
       const dur = parseDurationFromStderr(err);
-      if (dur == null) reject(new Error('No se pudo leer la duración del video'));
+      if (dur == null) reject(new Error('evt:err.duration'));
       else resolve(dur);
     });
   });
@@ -128,7 +128,7 @@ export async function extractPeaks(videoPath: string, targetBins = 2000): Promis
     child.on('error', reject);
     child.on('close', (code) => {
       if (code === 0) resolve(Buffer.concat(chunks));
-      else reject(new Error(`ffmpeg peaks failed (${code})`));
+      else reject(new Error('evt:err.waveform'));
     });
   });
 
@@ -162,7 +162,7 @@ export async function cutSilences(
     .filter(r => r.end - r.start > 0.02)
     .sort((a, b) => a.start - b.start);
 
-  if (ranges.length === 0) throw new Error('No hay segmentos para conservar.');
+  if (ranges.length === 0) throw new Error('evt:err.noSegments');
 
   const ext = path.extname(opts.videoPath);
   const base = path.basename(opts.videoPath, ext);
@@ -193,6 +193,7 @@ export async function cutSilences(
   let totalSec: number | null = null;
   // Final output duration is the sum of kept ranges; use it for progress mapping.
   const outDuration = ranges.reduce((s, r) => s + (r.end - r.start), 0);
+  onProgress(0, 'evt:cut.starting');
 
   return await new Promise<string>((resolve, reject) => {
     const child = spawn(ffmpeg, [
@@ -206,6 +207,7 @@ export async function cutSilences(
       outPath,
     ]);
     let err = '';
+    let lastMilestone = -1;
     child.stderr.on('data', (d) => {
       const s = d.toString();
       err += s;
@@ -215,17 +217,23 @@ export async function cutSilences(
         const t = parseTimeFromStderr(line);
         if (t != null) {
           const pct = Math.min(100, (t / outDuration) * 100);
-          onProgress(pct, line.trim());
+          const milestone = Math.floor(pct / 10) * 10;
+          if (milestone > lastMilestone && milestone > 0 && milestone < 100) {
+            lastMilestone = milestone;
+            onProgress(pct, `evt:cut.progress:${milestone}`);
+          } else {
+            onProgress(pct, '');
+          }
         }
       }
     });
     child.on('error', reject);
     child.on('close', (code) => {
       if (code === 0) {
-        onProgress(100, 'done');
+        onProgress(100, 'evt:cut.done');
         resolve(outPath);
       } else {
-        reject(new Error(`ffmpeg cut failed (${code}): ${err.slice(-500)}`));
+        reject(new Error('evt:err.cut'));
       }
     });
   });
