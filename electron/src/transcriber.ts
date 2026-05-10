@@ -20,9 +20,9 @@ export interface TranscribeResult {
 }
 
 const MODEL_FILE: Record<WhisperModel, string> = {
-  tiny:   'bsb-001.dat',
-  medium: 'bsb-002.dat',
-  large:  'bsb-004.dat',
+  tiny:   'ggml-tiny.bin',
+  medium: 'ggml-medium.bin',
+  large:  'ggml-large-v3.bin',
 };
 
 function resourceRoot(): string {

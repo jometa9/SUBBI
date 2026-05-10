@@ -15,6 +15,7 @@ function createWindow() {
     height: 800,
     minWidth: 900,
     minHeight: 600,
+    icon: path.join(__dirname, '..', '..', 'build', 'icon.icns'),
     backgroundColor: '#111111',
     titleBarStyle: 'hidden',
     titleBarOverlay: {
@@ -67,6 +68,11 @@ function createWindow() {
 }
 
 app.whenReady().then(() => {
+  if (isDev && process.platform === 'darwin' && app.dock) {
+    try {
+      app.dock.setIcon(path.join(__dirname, '..', '..', 'build', 'icon.icns'));
+    } catch {}
+  }
   createWindow();
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();

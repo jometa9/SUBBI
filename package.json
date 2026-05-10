@@ -6,6 +6,8 @@
   "private": true,
   "main": "electron/dist/main.js",
   "scripts": {
+    "postinstall": "node scripts/setup-models.js",
+    "setup:models": "node scripts/setup-models.js",
     "dev": "concurrently -k -n vite,electron -c blue,magenta \"npm:dev:vite\" \"npm:dev:electron-wait\"",
     "dev:vite": "vite",
     "dev:electron-wait": "wait-on http://localhost:5180 && npm run dev:electron",
@@ -36,7 +38,8 @@
     "productName": "Subbi",
     "asar": true,
     "asarUnpack": [
-      "resources/whisper/**/*"
+      "resources/whisper/**/*",
+      "node_modules/ffmpeg-static/**/*"
     ],
     "files": [
       "electron/dist/**/*",
@@ -50,12 +53,42 @@
         "filter": [
           "**/*"
         ]
+      },
+      {
+        "from": "node_modules/ffmpeg-static/ffmpeg",
+        "to": "ffmpeg/ffmpeg"
+      },
+      {
+        "from": "node_modules/ffmpeg-static/ffmpeg.exe",
+        "to": "ffmpeg/ffmpeg.exe"
       }
     ],
     "directories": {
-      "output": "release"
+      "output": "release",
+      "buildResources": "build"
+    },
+    "mac": {
+      "icon": "build/icon.icns",
+      "category": "public.app-category.video",
+      "identity": null,
+      "target": [
+        {
+          "target": "pkg",
+          "arch": [
+            "arm64"
+          ]
+        }
+      ],
+      "artifactName": "Subbi-Setup.${ext}"
+    },
+    "pkg": {
+      "installLocation": "/Applications",
+      "allowAnywhere": true,
+      "allowCurrentUserHome": true,
+      "allowRootDirectory": true
     },
     "win": {
+      "icon": "build/icon.png",
       "target": [
         {
           "target": "nsis",
@@ -64,10 +97,21 @@
           ]
         }
       ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "include": "build/installer.nsh",
+      "artifactName": "Subbi-Setup.${ext}"
+    },
+    "linux": {
+      "icon": "build/icon.png"
     }
   },
   "dependencies": {
     "@fontsource-variable/inter": "^5.2.8",
+    "ffmpeg-static": "^5.3.0",
     "wavesurfer.js": "^7.12.6"
   }
 }

@@ -1,7 +1,14 @@
 node_modules
 dist
+build
 release
 electron/dist
 .DS_Store
 *.log
 resources/whisper/*.dat
+resources/whisper/*.bin
+resources/whisper/**/*.dylib
+resources/whisper/**/*.dll
+resources/whisper/**/*.so
+resources/whisper/**/whisper-cli
+resources/whisper/**/whisper-cli.exe
