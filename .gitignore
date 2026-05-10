@@ -1,0 +1,7 @@
+node_modules
+dist
+release
+electron/dist
+.DS_Store
+*.log
+resources/whisper/*.dat

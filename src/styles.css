@@ -1,0 +1,132 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+* { box-sizing: border-box; }
+html, body, #root { height: 100%; margin: 0; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  background: #111;
+  color: #eee;
+  font-size: 14px;
+}
+
+.app {
+  display: grid;
+  grid-template-columns: 1fr 320px;
+  height: 100vh;
+}
+
+.preview {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  justify-content: stretch;
+  padding: 16px;
+  background: #000;
+  position: relative;
+  overflow: hidden;
+}
+.preview:has(.video-wrap) {
+  align-items: center;
+  justify-content: center;
+}
+
+.dropzone {
+  border: 2px dashed #555;
+  border-radius: 12px;
+  text-align: center;
+  color: #888;
+  width: 100%;
+  height: 100%;
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: border-color .15s, color .15s, background .15s, transform .15s;
+}
+.dropzone.over {
+  border-color: #9999ff;
+  border-style: solid;
+  color: #ffffff;
+  background: rgba(153, 153, 255, 0.12);
+  box-shadow: 0 0 0 4px rgba(153, 153, 255, 0.18) inset;
+  transform: scale(0.995);
+}
+.dropzone.over .dropzone-hint {
+  color: #b3b3ff;
+}
+.dropzone > * { pointer-events: none; }
+.dropzone input { display: none; }
+
+.video-wrap {
+  position: relative;
+  width: 100%;
+  max-height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+video {
+  max-width: 100%;
+  max-height: calc(100vh - 32px);
+  background: #000;
+}
+
+.subtitle-overlay {
+  position: absolute;
+  text-align: center;
+  pointer-events: none;
+  padding: 0 16px;
+  text-shadow:
+    -2px -2px 0 var(--outline),
+     2px -2px 0 var(--outline),
+    -2px  2px 0 var(--outline),
+     2px  2px 0 var(--outline);
+  white-space: pre-wrap;
+  line-height: 1.2;
+}
+.subtitle-overlay.sample {
+  opacity: 0.55;
+}
+
+/* Premiere-style range slider */
+input[type="range"].pr-range {
+  -webkit-appearance: none;
+  appearance: none;
+  height: 4px;
+  background: #1a1a1a;
+  border: 1px solid #3d3d3d;
+  border-radius: 999px;
+  outline: none;
+}
+input[type="range"].pr-range::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 14px;
+  height: 14px;
+  border-radius: 999px;
+  background: #9999ff;
+  border: 1px solid #5b58e8;
+  cursor: pointer;
+  box-shadow: 0 0 0 1px rgba(0,0,0,0.4);
+}
+input[type="range"].pr-range::-webkit-slider-thumb:hover {
+  background: #b3b3ff;
+}
+
+/* Drag region: hold-and-drag the sidebar background to move the window.
+   Interactive elements opt out so they remain clickable. */
+.drag-region { -webkit-app-region: drag; app-region: drag; }
+.drag-region button,
+.drag-region input,
+.drag-region select,
+.drag-region textarea,
+.drag-region label,
+.drag-region a,
+.no-drag {
+  -webkit-app-region: no-drag;
+  app-region: no-drag;
+}
