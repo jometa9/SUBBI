@@ -11,6 +11,7 @@ type Cue = { start: number; end: number; text: string; edited?: boolean };
 type SubtitleStyle = {
   fontName: string;
   fontSize: number;
+  fontWeight: 'normal' | 'semibold' | 'bold';
   color: string;
   outline: string;
   outlineEnabled: boolean;
@@ -31,6 +32,7 @@ type ProcessState =
 const DEFAULT_STYLE: SubtitleStyle = {
   fontName: 'Arial',
   fontSize: 28,
+  fontWeight: 'bold',
   color: '#FFFFFF',
   outline: '#000000',
   outlineEnabled: true,
@@ -108,6 +110,10 @@ const TRANSLATIONS: Record<UiLang, Record<string, string>> = {
     sectionSilence: 'Silence',
     sectionTranscription: 'Transcription',
     sectionSubtitleStyle: 'Subtitle style',
+    weight: 'Weight',
+    weightNormal: 'Regular',
+    weightSemibold: 'Semibold',
+    weightBold: 'Bold',
     cues: 'cues',
     generatingWaveform: 'Generating waveform…',
     pillSilence: 'SILENCE',
@@ -125,6 +131,10 @@ const TRANSLATIONS: Record<UiLang, Record<string, string>> = {
     splitHere: 'Split here',
     removeSplit: 'Remove split',
     splitsBadge: 'splits',
+    cropZoneHere: 'New crop zone here',
+    cropZoneRemove: 'Remove zone',
+    cropZonesBadge: 'zones',
+    cropActiveZone: 'Active zone {n}/{total}',
     exportPartsHint: 'Export will produce one file per segment.',
     zoomTimeline: 'Zoom timeline',
     zoomReset: 'Reset zoom',
@@ -225,6 +235,10 @@ const TRANSLATIONS: Record<UiLang, Record<string, string>> = {
     sectionSilence: 'Silencios',
     sectionTranscription: 'Transcripción',
     sectionSubtitleStyle: 'Estilo del subtítulo',
+    weight: 'Peso',
+    weightNormal: 'Regular',
+    weightSemibold: 'Semibold',
+    weightBold: 'Bold',
     cues: 'subtítulos',
     generatingWaveform: 'Generando forma de onda…',
     pillSilence: 'SILENCIO',
@@ -242,6 +256,10 @@ const TRANSLATIONS: Record<UiLang, Record<string, string>> = {
     splitHere: 'Cortar aquí',
     removeSplit: 'Quitar corte',
     splitsBadge: 'cortes',
+    cropZoneHere: 'Nueva zona de crop aquí',
+    cropZoneRemove: 'Quitar zona',
+    cropZonesBadge: 'zonas',
+    cropActiveZone: 'Zona activa {n}/{total}',
     exportPartsHint: 'Se exportará un archivo por cada segmento.',
     zoomTimeline: 'Zoom de la timeline',
     zoomReset: 'Restablecer zoom',
@@ -427,6 +445,8 @@ type ProjectState = {
   language: string;
   model: 'tiny' | 'medium' | 'large';
   splitMarkers?: number[];
+  cropMarkers?: number[];
+  cropByZone?: Record<string, CropRect>;
   currentTime?: number;
   timelineZoom?: number;
   previewZoom?: number;
@@ -597,6 +617,9 @@ export default function App() {
   const [cropEditing, setCropEditing] = useState<boolean>(false);
   const [crop, setCrop] = useState<CropRect>(DEFAULT_CROP);
   const [aspectId, setAspectId] = useState<string>('free');
+  const [cropMarkers, setCropMarkers] = useState<number[]>([]);
+  const [cropByZone, setCropByZone] = useState<Record<string, CropRect>>({});
+  const [selectedCropMarker, setSelectedCropMarker] = useState<number | null>(null);
 
   const [volumeDb, setVolumeDb] = useState<number>(0);
   const [noiseGateDb, setNoiseGateDb] = useState<number>(-40);
@@ -627,6 +650,84 @@ export default function App() {
     setSelectedMarker(null);
   }
 
+  const cropZones = useMemo(() => {
+    const dur = videoDuration || 0;
+    const inner = [...cropMarkers]
+      .filter(m => m > 0.01 && (dur === 0 || m < dur - 0.01))
+      .sort((a, b) => a - b);
+    const bounds = [0, ...inner, dur];
+    const zones: { key: string; start: number; end: number }[] = [];
+    for (let i = 0; i < bounds.length - 1; i++) {
+      const s = bounds[i];
+      const e = bounds[i + 1];
+      if (e - s < 1e-6) continue;
+      zones.push({ key: s.toFixed(3), start: s, end: e });
+    }
+    if (zones.length === 0) zones.push({ key: '0.000', start: 0, end: dur });
+    return zones;
+  }, [cropMarkers, videoDuration]);
+
+  const activeZoneIdx = useMemo(() => {
+    const i = cropZones.findIndex(z => currentTime >= z.start && currentTime < z.end);
+    return i >= 0 ? i : cropZones.length - 1;
+  }, [cropZones, currentTime]);
+  const activeZone = cropZones[activeZoneIdx] ?? cropZones[0];
+  const activeZoneKey = activeZone?.key ?? '0.000';
+
+  function cropForTime(t: number): CropRect {
+    const z = cropZones.find(z => t >= z.start && t < z.end) ?? cropZones[cropZones.length - 1];
+    return (z && cropByZone[z.key]) || crop;
+  }
+  const effectiveCrop: CropRect = cropMarkers.length > 0
+    ? (cropByZone[activeZoneKey] ?? crop)
+    : crop;
+
+  function setEffectiveCrop(updater: CropRect | ((c: CropRect) => CropRect)) {
+    const apply = (c: CropRect): CropRect =>
+      typeof updater === 'function' ? (updater as (c: CropRect) => CropRect)(c) : updater;
+    if (cropMarkers.length === 0) {
+      setCrop(prev => apply(prev));
+    } else {
+      setCropByZone(prev => ({ ...prev, [activeZoneKey]: apply(prev[activeZoneKey] ?? crop) }));
+    }
+  }
+
+  function addCropZoneAtCurrent() {
+    if (!videoDuration) return;
+    const t = Math.max(0.01, Math.min(videoDuration - 0.01, currentTime));
+    if (cropMarkers.some(m => Math.abs(m - t) < 0.05)) return;
+    const seed = effectiveCrop;
+    setCropMarkers(prev => [...prev, t].sort((a, b) => a - b));
+    setCropByZone(prev => {
+      const k = t.toFixed(3);
+      if (prev[k]) return prev;
+      return { ...prev, [k]: seed };
+    });
+  }
+
+  function removeCropZoneNearCurrent() {
+    if (cropMarkers.length === 0) return;
+    let removed: number | null = null;
+    if (selectedCropMarker != null) {
+      removed = selectedCropMarker;
+    } else {
+      let bestDist = Infinity;
+      cropMarkers.forEach(m => {
+        const d = Math.abs(m - currentTime);
+        if (d < bestDist) { bestDist = d; removed = m; }
+      });
+    }
+    if (removed == null) return;
+    const target = removed;
+    setCropMarkers(prev => prev.filter(m => Math.abs(m - target) > 1e-6));
+    setCropByZone(prev => {
+      const next = { ...prev };
+      delete next[target.toFixed(3)];
+      return next;
+    });
+    setSelectedCropMarker(null);
+  }
+
   const [confirmReset, setConfirmReset] = useState<string | null>(null);
   const confirmTimerRef = useRef<number | null>(null);
   function armReset(key: string) {
@@ -654,6 +755,9 @@ export default function App() {
     setCrop(DEFAULT_CROP);
     setAspectId('free');
     setCropEnabled(false);
+    setCropMarkers([]);
+    setCropByZone({});
+    setSelectedCropMarker(null);
   }
   function resetSilence() {
     setSilenceRegions([]);
@@ -1082,7 +1186,7 @@ export default function App() {
         silenceRegions, thresholdDb, autoThreshold, meanVolumeDb, minSilenceDur,
         cropEnabled, crop, aspectId, volumeDb, noiseGateDb, noiseGateEnabled,
         srtPath, rawCues, style, language, model,
-        splitMarkers,
+        splitMarkers, cropMarkers, cropByZone,
         currentTime, timelineZoom, previewZoom, volume, muted, playbackRate,
       });
     }
@@ -1110,6 +1214,8 @@ export default function App() {
       setSrtPath(saved.srtPath ?? null);
       setRawCues(saved.rawCues ?? null);
       setSplitMarkers(saved.splitMarkers ?? []);
+      setCropMarkers(saved.cropMarkers ?? []);
+      setCropByZone(saved.cropByZone ?? {});
       if (saved.style) setStyle({ ...DEFAULT_STYLE, ...saved.style });
       if (saved.language) setLanguage(saved.language);
       if (saved.model) setModel(saved.model);
@@ -1137,6 +1243,8 @@ export default function App() {
       setNoiseGateDb(-40);
       setNoiseGateEnabled(false);
       setSplitMarkers([]);
+      setCropMarkers([]);
+      setCropByZone({});
       setCurrentTime(0);
       setTimelineZoom(1);
       setPreviewZoom(1);
@@ -1153,7 +1261,7 @@ export default function App() {
         silenceRegions, thresholdDb, autoThreshold, meanVolumeDb, minSilenceDur,
         cropEnabled, crop, aspectId, volumeDb, noiseGateDb, noiseGateEnabled,
         srtPath, rawCues, style, language, model,
-        splitMarkers,
+        splitMarkers, cropMarkers, cropByZone,
         currentTime, timelineZoom, previewZoom, volume, muted, playbackRate,
       });
       setAutosaveTick('saved');
@@ -1165,7 +1273,7 @@ export default function App() {
   }, [videoPath, silenceRegions, thresholdDb, autoThreshold, meanVolumeDb, minSilenceDur,
       cropEnabled, crop, aspectId, volumeDb, noiseGateDb, noiseGateEnabled,
       srtPath, rawCues, style, language, model,
-      splitMarkers,
+      splitMarkers, cropMarkers, cropByZone,
       currentTime, timelineZoom, previewZoom, volume, muted, playbackRate]);
 
   useEffect(() => {
@@ -1326,7 +1434,7 @@ export default function App() {
         const segOut = await window.subbi.exportVideo({
           videoPath,
           keepRanges: useKeep ? segKeep : undefined,
-          crop: hasCrop ? crop : null,
+          crop: hasCrop ? cropForTime(seg.start) : null,
           subtitles: hasSubs ? { srtPath: srtPath!, style: burnStyle } : null,
           volumeDb: hasVolume ? volumeDb : 0,
           noiseGateDb: hasGate ? noiseGateDb : null,
@@ -1350,7 +1458,7 @@ export default function App() {
     fontFamily: style.fontName,
     fontSize: `${style.fontSize * previewZoom}px`,
     color: style.color,
-    fontWeight: 700,
+    fontWeight: style.fontWeight === 'bold' ? 700 : style.fontWeight === 'semibold' ? 600 : 400,
     ['--outline' as any]: style.outlineEnabled ? style.outline : 'transparent',
     textShadow: style.outlineEnabled ? undefined : 'none',
   };
@@ -1399,22 +1507,24 @@ export default function App() {
 
   const videoW = videoRef.current?.videoWidth ?? 0;
   const videoH = videoRef.current?.videoHeight ?? 0;
-  const cropPxX = videoW ? Math.round(crop.x * videoW) : 0;
-  const cropPxY = videoH ? Math.round(crop.y * videoH) : 0;
-  const cropPxW = videoW ? Math.round(crop.width * videoW) : 0;
-  const cropPxH = videoH ? Math.round(crop.height * videoH) : 0;
+  const cropPxX = videoW ? Math.round(effectiveCrop.x * videoW) : 0;
+  const cropPxY = videoH ? Math.round(effectiveCrop.y * videoH) : 0;
+  const cropPxW = videoW ? Math.round(effectiveCrop.width * videoW) : 0;
+  const cropPxH = videoH ? Math.round(effectiveCrop.height * videoH) : 0;
 
   function updateCropFromPixels(p: { x?: number; y?: number; w?: number; h?: number }) {
     if (!videoW || !videoH) return;
     if (!isFinite(p.x ?? 0) || !isFinite(p.y ?? 0) || !isFinite(p.w ?? 0) || !isFinite(p.h ?? 0)) return;
-    const next = { ...crop };
-    if (p.x != null) next.x = Math.max(0, Math.min(videoW - 1, p.x)) / videoW;
-    if (p.y != null) next.y = Math.max(0, Math.min(videoH - 1, p.y)) / videoH;
-    if (p.w != null) next.width = Math.max(1, Math.min(videoW, p.w)) / videoW;
-    if (p.h != null) next.height = Math.max(1, Math.min(videoH, p.h)) / videoH;
-    if (next.x + next.width > 1) next.x = Math.max(0, 1 - next.width);
-    if (next.y + next.height > 1) next.y = Math.max(0, 1 - next.height);
-    setCrop(next);
+    setEffectiveCrop(cur => {
+      const next = { ...cur };
+      if (p.x != null) next.x = Math.max(0, Math.min(videoW - 1, p.x)) / videoW;
+      if (p.y != null) next.y = Math.max(0, Math.min(videoH - 1, p.y)) / videoH;
+      if (p.w != null) next.width = Math.max(1, Math.min(videoW, p.w)) / videoW;
+      if (p.h != null) next.height = Math.max(1, Math.min(videoH, p.h)) / videoH;
+      if (next.x + next.width > 1) next.x = Math.max(0, 1 - next.width);
+      if (next.y + next.height > 1) next.y = Math.max(0, 1 - next.height);
+      return next;
+    });
     setAspectId('free');
     setCropEnabled(true);
     setCropEditing(true);
@@ -1719,7 +1829,7 @@ export default function App() {
                       fontFamily: style.fontName,
                       fontSize: `${style.fontSize * previewZoom}px`,
                       color: style.color,
-                      fontWeight: 700,
+                      fontWeight: style.fontWeight === 'bold' ? 700 : style.fontWeight === 'semibold' ? 600 : 400,
                       textAlign: 'center',
                     }}
                   />
@@ -1730,9 +1840,9 @@ export default function App() {
               {cropEnabled && cropEditing && (
                 <CropOverlay
                   videoEl={videoRef.current}
-                  crop={crop}
+                  crop={effectiveCrop}
                   aspectRatio={aspectRatio}
-                  onChange={setCrop}
+                  onChange={setEffectiveCrop}
                   onApply={() => setCropEditing(false)}
                   onUserResize={() => setAspectId('free')}
                 />
@@ -1795,6 +1905,34 @@ export default function App() {
               <span className="vc-split-count" title={t('exportPartsHint')}>
                 {splitMarkers.length} {t('splitsBadge')}
               </span>
+            )}
+            <button
+              className="vc-btn vc-split-btn"
+              onClick={addCropZoneAtCurrent}
+              disabled={!videoDuration || isBusy}
+              title={t('cropZoneHere')}
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M6 2v14a2 2 0 0 0 2 2h14" />
+                <path d="M2 6h14a2 2 0 0 1 2 2v14" />
+              </svg>
+            </button>
+            {cropMarkers.length > 0 && (
+              <>
+                <button
+                  className="vc-btn vc-split-remove"
+                  onClick={removeCropZoneNearCurrent}
+                  disabled={isBusy}
+                  title={t('cropZoneRemove')}
+                >
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M18.3 5.71L12 12.01l-6.3-6.3-1.4 1.4 6.29 6.3-6.29 6.29 1.4 1.42 6.3-6.3 6.3 6.3 1.4-1.42-6.29-6.29 6.29-6.3z"/>
+                  </svg>
+                </button>
+                <span className="vc-split-count" title={t('cropActiveZone').replace('{n}', String(activeZoneIdx + 1)).replace('{total}', String(cropZones.length))}>
+                  {cropZones.length} {t('cropZonesBadge')}
+                </span>
+              </>
             )}
             <span className="vc-spacer" />
             <span className="vc-zoom-icon" title={`${t('zoomTimeline')}: ${timelineZoom.toFixed(1)}x`}>
@@ -1925,6 +2063,9 @@ export default function App() {
                       splitMarkers={splitMarkers}
                       selectedMarker={selectedMarker}
                       onSelectMarker={setSelectedMarker}
+                      cropMarkers={cropMarkers}
+                      selectedCropMarker={selectedCropMarker}
+                      onSelectCropMarker={setSelectedCropMarker}
                       theme={resolvedTheme}
                     />
                   </div>
@@ -1987,10 +2128,13 @@ export default function App() {
             <span className="pr-section-chev" />
             <span className="pr-section-title">{t('sectionCrop')}</span>
             {cropEnabled && <span className="pr-badge">ON</span>}
+            {cropMarkers.length > 0 && (
+              <span className="pr-badge">{cropZones.length} {t('cropZonesBadge')}</span>
+            )}
             {renderSectionReset(
               'crop',
               resetCrop,
-              cropEnabled || aspectId !== 'free' || crop.x !== DEFAULT_CROP.x || crop.y !== DEFAULT_CROP.y || crop.width !== DEFAULT_CROP.width || crop.height !== DEFAULT_CROP.height
+              cropEnabled || aspectId !== 'free' || cropMarkers.length > 0 || crop.x !== DEFAULT_CROP.x || crop.y !== DEFAULT_CROP.y || crop.width !== DEFAULT_CROP.width || crop.height !== DEFAULT_CROP.height
             )}
           </button>
           <div className="pr-section-body">
@@ -2064,7 +2208,7 @@ export default function App() {
                   className="pr-chip"
                   disabled={!videoPath || isBusy}
                   title="Center horizontally"
-                  onClick={() => setCrop(c => ({ ...c, x: (1 - c.width) / 2 }))}
+                  onClick={() => setEffectiveCrop(c => ({ ...c, x: (1 - c.width) / 2 }))}
                 >
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="3" x2="12" y2="21"/><polyline points="6 9 3 12 6 15"/><polyline points="18 9 21 12 18 15"/></svg>
                 </button>
@@ -2073,7 +2217,7 @@ export default function App() {
                   className="pr-chip"
                   disabled={!videoPath || isBusy}
                   title="Center vertically"
-                  onClick={() => setCrop(c => ({ ...c, y: (1 - c.height) / 2 }))}
+                  onClick={() => setEffectiveCrop(c => ({ ...c, y: (1 - c.height) / 2 }))}
                 >
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="3" y1="12" x2="21" y2="12"/><polyline points="9 6 12 3 15 6"/><polyline points="9 18 12 21 15 18"/></svg>
                 </button>
@@ -2082,15 +2226,39 @@ export default function App() {
                   className="pr-chip"
                   disabled={!videoPath || isBusy}
                   title="Center both"
-                  onClick={() => setCrop(c => ({ ...c, x: (1 - c.width) / 2, y: (1 - c.height) / 2 }))}
+                  onClick={() => setEffectiveCrop(c => ({ ...c, x: (1 - c.width) / 2, y: (1 - c.height) / 2 }))}
                 >
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="3"/><line x1="12" y1="3" x2="12" y2="7"/><line x1="12" y1="17" x2="12" y2="21"/><line x1="3" y1="12" x2="7" y2="12"/><line x1="17" y1="12" x2="21" y2="12"/></svg>
                 </button>
               </div>
             </div>
+            <div className="pr-row">
+              <span className="pr-label">{t('cropZonesBadge')}</span>
+              <div className="pr-aspect-row" style={{ flex: 1 }}>
+                <button
+                  type="button"
+                  className="pr-chip"
+                  disabled={!videoPath || !videoDuration || isBusy}
+                  onClick={addCropZoneAtCurrent}
+                  title={t('cropZoneHere')}
+                >+ {t('cropZoneHere')}</button>
+                <button
+                  type="button"
+                  className="pr-chip"
+                  disabled={!videoPath || cropMarkers.length === 0 || isBusy}
+                  onClick={removeCropZoneNearCurrent}
+                  title={t('cropZoneRemove')}
+                >− {t('cropZoneRemove')}</button>
+                {cropMarkers.length > 0 && (
+                  <span className="pr-value" style={{ marginLeft: 'auto' }}>
+                    {t('cropActiveZone').replace('{n}', String(activeZoneIdx + 1)).replace('{total}', String(cropZones.length))}
+                  </span>
+                )}
+              </div>
+            </div>
             <div className="pr-row pr-row-end">
               <button
-                onClick={() => { setCrop(DEFAULT_CROP); setAspectId('free'); setCropEnabled(true); setCropEditing(true); }}
+                onClick={() => { setEffectiveCrop(DEFAULT_CROP); setAspectId('free'); setCropEnabled(true); setCropEditing(true); }}
                 disabled={!videoPath || isBusy}
                 className="pr-btn pr-btn-ghost">
                 {t('resetCrop')}
@@ -2280,6 +2448,19 @@ export default function App() {
                 value={style.fontName}
                 onChange={v => setStyle(s => ({ ...s, fontName: v }))}
                 options={FONT_OPTIONS.map(f => ({ value: f, label: f }))}
+              />
+            </div>
+            <div className="pr-row">
+              <span className="pr-label">{t('weight')}</span>
+              <Select
+                className="pr-input-flex"
+                value={style.fontWeight}
+                onChange={v => setStyle(s => ({ ...s, fontWeight: v as SubtitleStyle['fontWeight'] }))}
+                options={[
+                  { value: 'normal', label: t('weightNormal') },
+                  { value: 'semibold', label: t('weightSemibold') },
+                  { value: 'bold', label: t('weightBold') },
+                ]}
               />
             </div>
             <div className="pr-row">

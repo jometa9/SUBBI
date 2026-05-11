@@ -25,6 +25,9 @@ interface Props {
   splitMarkers?: number[];
   selectedMarker?: number | null;
   onSelectMarker?: (time: number | null) => void;
+  cropMarkers?: number[];
+  selectedCropMarker?: number | null;
+  onSelectCropMarker?: (time: number | null) => void;
   height?: number;
   theme?: 'light' | 'dark';
 }
@@ -41,6 +44,7 @@ const SilenceTimeline = React.forwardRef<SilenceTimelineHandle, Props>(function 
     videoEl, peaks, duration, regions, currentTime,
     onToggleRegion, onUpdateRegion,
     splitMarkers = [], selectedMarker = null, onSelectMarker,
+    cropMarkers = [], selectedCropMarker = null, onSelectCropMarker,
     height = 84, theme,
   },
   ref
@@ -77,6 +81,9 @@ const SilenceTimeline = React.forwardRef<SilenceTimelineHandle, Props>(function 
       progressColor: colors.progressColor,
       cursorColor: colors.cursorColor,
       cursorWidth: 3,
+      barWidth: 2,
+      barGap: 2,
+      barRadius: 1,
       normalize: true,
       interact: true,
       media: videoEl,
@@ -166,12 +173,30 @@ const SilenceTimeline = React.forwardRef<SilenceTimelineHandle, Props>(function 
       className="st-wrap w-full relative"
       style={{ minHeight: height }}
       onClick={(e) => {
-        if ((e.target as HTMLElement).dataset.splitMarker == null) {
-          onSelectMarker?.(null);
-        }
+        const el = e.target as HTMLElement;
+        if (el.dataset.splitMarker == null) onSelectMarker?.(null);
+        if (el.dataset.cropMarker == null) onSelectCropMarker?.(null);
       }}
     >
       <div ref={containerRef} className="w-full" style={{ minHeight: height }} />
+      {duration > 0 && cropMarkers.map((t, i) => {
+        const left = (t / duration) * 100;
+        const isSel = selectedCropMarker != null && Math.abs(selectedCropMarker - t) < 1e-6;
+        return (
+          <button
+            key={`crop-${i}-${t.toFixed(3)}`}
+            type="button"
+            data-crop-marker="1"
+            className={'st-crop-marker' + (isSel ? ' is-selected' : '')}
+            style={{ left: `${left}%` }}
+            title={`Crop zone · ${t.toFixed(2)}s`}
+            onClick={(e) => {
+              e.stopPropagation();
+              onSelectCropMarker?.(isSel ? null : t);
+            }}
+          />
+        );
+      })}
       {showMarkers && splitMarkers.map((t, i) => {
         const left = (t / duration) * 100;
         const isSel = selectedMarker != null && Math.abs(selectedMarker - t) < 1e-6;

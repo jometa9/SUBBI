@@ -1268,32 +1268,37 @@ input[type="range"].pr-range-flex { flex: 1 1 auto; min-width: 0; }
 }
 
 .st-wrap { position: relative; }
-.st-marker {
+.st-marker,
+.st-crop-marker {
   position: absolute;
   top: 0;
   bottom: 0;
-  width: 2px;
-  background: var(--c-danger-strong);
+  width: 0;
   border: 0;
+  border-left: 2px solid;
+  background: transparent;
   padding: 0;
   margin-left: -1px;
   cursor: pointer;
-  z-index: 4;
   outline: none;
-  box-shadow: 0 0 0 1px var(--c-shadow-strong);
+  opacity: 0.95;
 }
-.st-marker::before {
+.st-marker::before,
+.st-crop-marker::before {
   content: '';
   position: absolute;
   inset: 0 -4px;
-
 }
-.st-marker:hover { background: var(--c-danger-mid); }
-.st-marker.is-selected {
-  background: var(--c-warn);
-  width: 3px;
+.st-marker { border-left-color: var(--c-danger-strong); z-index: 4; }
+.st-marker:hover { border-left-color: var(--c-danger-mid); opacity: 1; }
+.st-crop-marker { border-left-color: #3aa0ff; z-index: 3; }
+.st-crop-marker:hover { border-left-color: #66b7ff; opacity: 1; }
+.st-marker.is-selected,
+.st-crop-marker.is-selected {
+  border-left: 3px dashed #f1f5ff;
   margin-left: -2px;
-  box-shadow: 0 0 0 1px var(--c-stage), 0 0 6px var(--c-warn-glow);
+  opacity: 1;
+  box-shadow: 0 0 0 1px var(--c-stage), 0 0 6px rgba(241, 245, 255, 0.6);
 }
 .vc-seek-row {
   display: flex;

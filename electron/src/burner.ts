@@ -8,6 +8,7 @@ import { findFfmpeg, parseDurationFromStderr, parseTimeFromStderr } from './ffmp
 export interface SubtitleStyle {
   fontName: string;
   fontSize: number;
+  fontWeight?: 'normal' | 'semibold' | 'bold';
   color: string;
   outline: string;
   outlineEnabled?: boolean;
@@ -147,7 +148,7 @@ export async function burn(
     `MarginV=${marginV}`,
     `MarginL=${marginL}`,
     `MarginR=${marginR}`,
-    `Bold=1`,
+    `Bold=${opts.style.fontWeight === 'normal' ? 0 : 1}`,
   ].join(',');
 
   const vf = `subtitles='${escapeForFilter(srtToUse)}':force_style='${styleParts}'`;

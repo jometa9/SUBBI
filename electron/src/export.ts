@@ -8,6 +8,7 @@ import { findFfmpeg, parseDurationFromStderr, parseTimeFromStderr } from './ffmp
 export interface SubtitleStyle {
   fontName: string;
   fontSize: number;
+  fontWeight?: 'normal' | 'semibold' | 'bold';
   color: string;
   outline: string;
   outlineEnabled?: boolean;
@@ -147,7 +148,7 @@ function buildSubtitlesFilter(srtPath: string, style: SubtitleStyle): string {
     `Alignment=2`,
     `MarginV=${marginV}`,
     `MarginL=${marginL}`, `MarginR=${marginR}`,
-    `Bold=1`,
+    `Bold=${style.fontWeight === 'normal' ? 0 : 1}`,
   ].join(',');
   return `subtitles='${escapeForFilter(srtPath)}':force_style='${styleParts}'`;
 }

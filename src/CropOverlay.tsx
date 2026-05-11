@@ -218,10 +218,32 @@ export default function CropOverlay({ videoEl, crop, aspectRatio, onChange, onAp
             'linear-gradient(to bottom, transparent 33.33%, rgba(255,255,255,0.4) 33.33%, rgba(255,255,255,0.4) calc(33.33% + 1px), transparent calc(33.33% + 1px), transparent 66.66%, rgba(255,255,255,0.4) 66.66%, rgba(255,255,255,0.4) calc(66.66% + 1px), transparent calc(66.66% + 1px))',
           pointerEvents: 'none',
         }} />
+        {onApply && (
+          <button
+            type="button"
+            onPointerDown={(e) => e.stopPropagation()}
+            onClick={(e) => { e.stopPropagation(); onApply(); }}
+            style={{
+              position: 'absolute',
+              top: -32,
+              right: 0,
+              padding: '4px 10px',
+              fontSize: 12,
+              fontWeight: 600,
+              background: '#ffffff',
+              color: '#1a1a1a',
+              border: '1px solid #1a1a1a',
+              borderRadius: 4,
+              cursor: 'pointer',
+              pointerEvents: 'auto',
+              boxShadow: '0 1px 3px rgba(0,0,0,0.4)',
+            }}
+          >Apply</button>
+        )}
         {HANDLES.map(h => (
           <div
             key={h}
-            onPointerDown={(e) => { onUserResize?.(); startDrag(e, { kind: 'resize', handle: h, startX: e.clientX, startY: e.clientY, orig: crop }); }}
+            onPointerDown={(e) => { if (aspectRatio == null) onUserResize?.(); startDrag(e, { kind: 'resize', handle: h, startX: e.clientX, startY: e.clientY, orig: crop }); }}
             style={{
               position: 'absolute',
               width: 10, height: 10,
