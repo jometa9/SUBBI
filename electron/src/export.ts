@@ -25,6 +25,7 @@ export interface SubtitleStyle {
   color: string;
   outline: string;
   outlineEnabled?: boolean;
+  outlineWidth?: number;
   marginVPct: number;
   marginHPct: number;
   textCase: 'asis' | 'upper' | 'lower';
@@ -169,7 +170,7 @@ function buildAssFromSrt(srtPath: string, style: SubtitleStyle, videoW: number, 
     '',
     '[V4+ Styles]',
     'Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding',
-    `Style: Default,${style.fontName},${style.fontSize},${primary},${primary},${outlineCol},&H00000000,${bold},0,0,0,100,100,0,0,1,${outlineOn ? Math.max(1, Math.round(style.fontSize * 0.08)) : 0},0,2,${marginL},${marginR},${marginV},1`,
+    `Style: Default,${style.fontName},${style.fontSize},${primary},${primary},${outlineCol},&H00000000,${bold},0,0,0,100,100,0,0,1,${outlineOn ? Math.max(0, style.outlineWidth ?? 2) : 0},0,2,${marginL},${marginR},${marginV},1`,
     '',
     '[Events]',
     'Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text',
@@ -194,6 +195,21 @@ function buildSubtitlesFilter(assPath: string): string {
 
 function clamp01(v: number): number { return Math.min(1, Math.max(0, v)); }
 
+function computeCropOutputSize(c: CropNormalized, videoW: number, videoH: number): { w: number; h: number } {
+  const innerX = clamp01(c.x);
+  const innerY = clamp01(c.y);
+  const innerW = clamp01(c.x + c.width) - innerX;
+  const innerH = clamp01(c.y + c.height) - innerY;
+  const extendsOutside =
+    c.x < -1e-6 || c.y < -1e-6 || c.x + c.width > 1 + 1e-6 || c.y + c.height > 1 + 1e-6;
+  const evenFloor = (v: number) => Math.max(2, Math.floor(v / 2) * 2);
+  const evenCeil = (v: number) => Math.max(2, Math.ceil(v / 2) * 2);
+  if (!extendsOutside) {
+    return { w: evenFloor(videoW * innerW), h: evenFloor(videoH * innerH) };
+  }
+  return { w: evenCeil(videoW * c.width), h: evenCeil(videoH * c.height) };
+}
+
 function buildCropFilter(c: CropNormalized, bgColor: 'black' | 'white' = 'black'): string {
   const innerX = clamp01(c.x);
   const innerY = clamp01(c.y);
@@ -207,7 +223,7 @@ function buildCropFilter(c: CropNormalized, bgColor: 'black' | 'white' = 'black'
   const hFactor = c.height / Math.max(1e-6, innerH);
   const xFactor = (innerX - c.x) / Math.max(1e-6, innerW);
   const yFactor = (innerY - c.y) / Math.max(1e-6, innerH);
-  const padPart = `pad='trunc(iw*${wFactor}/2)*2':'trunc(ih*${hFactor}/2)*2':'trunc(iw*${xFactor}/2)*2':'trunc(ih*${yFactor}/2)*2':color=${bgColor}`;
+  const padPart = `pad='2*ceil(iw*${wFactor}/2)':'2*ceil(ih*${hFactor}/2)':'trunc(iw*${xFactor}/2)*2':'trunc(ih*${yFactor}/2)*2':color=${bgColor}`;
   return `${cropPart},${padPart}`;
 }
 
@@ -229,10 +245,13 @@ export async function exportVideo(
     .sort((a, b) => a.start - b.start);
   const willCut = ranges.length > 0;
 
-  const subVideoW = opts.videoWidth && opts.videoWidth > 0 ? opts.videoWidth : 1280;
-  const subVideoH = opts.videoHeight && opts.videoHeight > 0 ? opts.videoHeight : 720;
+  const baseVideoW = opts.videoWidth && opts.videoWidth > 0 ? opts.videoWidth : 1280;
+  const baseVideoH = opts.videoHeight && opts.videoHeight > 0 ? opts.videoHeight : 720;
+  const outSize = opts.crop
+    ? computeCropOutputSize(opts.crop, baseVideoW, baseVideoH)
+    : { w: baseVideoW, h: baseVideoH };
   const assPath = opts.subtitles
-    ? buildAssFromSrt(opts.subtitles.srtPath, opts.subtitles.style, subVideoW, subVideoH)
+    ? buildAssFromSrt(opts.subtitles.srtPath, opts.subtitles.style, outSize.w, outSize.h)
     : null;
 
   const preChain: string[] = [];
@@ -382,6 +401,9 @@ export async function exportVideo(
         try { if (fs.existsSync(outPath)) fs.unlinkSync(outPath); } catch {}
         reject(new Error('evt:export.cancelled'));
       } else {
+        console.error('[export] ffmpeg failed code=' + code);
+        console.error('[export] args:', args.join(' '));
+        console.error('[export] stderr tail:\n' + err.slice(-4000));
         reject(new Error('evt:err.export'));
       }
     });

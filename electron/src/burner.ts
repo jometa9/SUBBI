@@ -12,6 +12,7 @@ export interface SubtitleStyle {
   color: string;
   outline: string;
   outlineEnabled?: boolean;
+  outlineWidth?: number;
   marginVPct: number;
   marginHPct: number;
   textCase: 'asis' | 'upper' | 'lower';
@@ -142,7 +143,7 @@ export async function burn(
     `PrimaryColour=${hexToAssColor(opts.style.color)}`,
     `OutlineColour=${hexToAssColor(opts.style.outline)}`,
     `BorderStyle=1`,
-    `Outline=${outlineOn ? 2 : 0}`,
+    `Outline=${outlineOn ? Math.max(0, opts.style.outlineWidth ?? 2) : 0}`,
     `Shadow=0`,
     `Alignment=2`,
     `MarginV=${marginV}`,

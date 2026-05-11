@@ -15,6 +15,7 @@ type SubtitleStyle = {
   color: string;
   outline: string;
   outlineEnabled: boolean;
+  outlineWidth: number;
   marginVPct: number;
   marginHPct: number;
   textCase: 'asis' | 'upper' | 'lower';
@@ -36,6 +37,7 @@ const DEFAULT_STYLE: SubtitleStyle = {
   color: '#FFFFFF',
   outline: '#000000',
   outlineEnabled: true,
+  outlineWidth: 2,
   marginVPct: 25,
   marginHPct: 0,
   textCase: 'asis',
@@ -71,7 +73,7 @@ const TRANSLATIONS: Record<UiLang, Record<string, string>> = {
     transcribe: 'Transcribe', transcribing: 'Transcribing',
     subtitleStyle: 'Subtitle style',
     font: 'Font', size: 'Size', vertical: 'Vertical', horizontal: 'Horizontal',
-    color: 'Color', outline: 'Outline',
+    color: 'Color', outline: 'Outline', outlineWidth: 'Outline width',
     textCase: 'Case', caseAsIs: 'As is', caseUpper: 'UPPERCASE', caseLower: 'lowercase',
     maxPerLine: 'Max words',
     couldNotReadPath: 'Could not read file path. Try "Open video".',
@@ -212,7 +214,7 @@ const TRANSLATIONS: Record<UiLang, Record<string, string>> = {
     transcribe: 'Transcribir', transcribing: 'Transcribiendo',
     subtitleStyle: 'Estilo del subtítulo',
     font: 'Fuente', size: 'Tamaño', vertical: 'Vertical', horizontal: 'Horizontal',
-    color: 'Color', outline: 'Contorno',
+    color: 'Color', outline: 'Contorno', outlineWidth: 'Grosor del contorno',
     textCase: 'Mayús/minús', caseAsIs: 'Tal cual', caseUpper: 'MAYÚSCULAS', caseLower: 'minúsculas',
     maxPerLine: 'Máx palabras',
     couldNotReadPath: 'No se pudo leer la ruta del archivo. Probá con "Abrir video".',
@@ -1581,7 +1583,13 @@ export default function App() {
     color: effectiveStyle.color,
     fontWeight: effectiveStyle.fontWeight === 'bold' ? 700 : effectiveStyle.fontWeight === 'semibold' ? 600 : 400,
     ['--outline' as any]: effectiveStyle.outlineEnabled ? effectiveStyle.outline : 'transparent',
-    textShadow: effectiveStyle.outlineEnabled ? undefined : 'none',
+    textShadow: effectiveStyle.outlineEnabled
+      ? (() => {
+          const w = Math.max(0, (effectiveStyle.outlineWidth ?? 2) * previewDisplayScale);
+          const c = effectiveStyle.outline;
+          return `-${w}px -${w}px 0 ${c}, ${w}px -${w}px 0 ${c}, -${w}px ${w}px 0 ${c}, ${w}px ${w}px 0 ${c}`;
+        })()
+      : 'none',
   };
 
   function beginEditCue() {
@@ -2754,6 +2762,14 @@ export default function App() {
               <ColorPicker value={effectiveStyle.outline}
                            disabled={!effectiveStyle.outlineEnabled}
                            onChange={v => setEffectiveStyle(s => ({ ...s, outline: v }))} />
+            </div>
+            <div className="pr-row">
+              <span className="pr-label">{t('outlineWidth')}</span>
+              <input type="number" min={0} max={20} step={1}
+                     value={effectiveStyle.outlineWidth}
+                     disabled={!effectiveStyle.outlineEnabled}
+                     onChange={e => setEffectiveStyle(s => ({ ...s, outlineWidth: Math.max(0, +e.target.value) }))}
+                     className="pr-input pr-input-num" />
             </div>
             <div className="pr-row">
               <span className="pr-label">{t('textCase')}</span>

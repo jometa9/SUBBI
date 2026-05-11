@@ -4,6 +4,7 @@ type SubbiStyle = {
   color: string;
   outline: string;
   outlineEnabled: boolean;
+  outlineWidth: number;
   marginVPct: number;
   marginHPct: number;
   textCase: 'asis' | 'upper' | 'lower';
