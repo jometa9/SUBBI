@@ -19,7 +19,7 @@
   --c-bg-chip: #353535;
   --c-bg-chip-hover: #404040;
   --c-bg-section-active: #282828;
-  --c-bg-option-hover: #2f2f6e;
+  --c-bg-option-hover: #3a1f6e;
 
   --c-border: #0c0c0c;
   --c-border-soft: #383838;
@@ -67,24 +67,24 @@
   --c-hoverline-shadow: rgba(0, 0, 0, 0.5);
   --c-preset-glow: rgba(255, 255, 255, 0.7);
 
-  --c-accent: #6c6cff;
-  --c-accent-light: #9999ff;
-  --c-accent-lighter: #b3b3ff;
-  --c-accent-bold: #7d7dff;
-  --c-accent-deep: #5b58e8;
-  --c-accent-mid: #4a48d8;
-  --c-accent-border: #2a28b0;
-  --c-accent-tint: rgba(108, 108, 255, 0.12);
-  --c-accent-tint-hover: rgba(108, 108, 255, 0.22);
-  --c-accent-tint-soft: rgba(108, 108, 255, 0.06);
-  --c-accent-glow: rgba(108, 108, 255, 0.4);
-  --c-accent-glow-soft: rgba(108, 108, 255, 0.35);
-  --c-accent-glow-strong: rgba(108, 108, 255, 0.45);
-  --c-accent-glow-dashed: rgba(108, 108, 255, 0.6);
-  --c-accent-tint-text: rgba(179, 179, 255, 0.6);
-  --c-accent-cta-top: #5a5aff;
-  --c-accent-cta-bot: #4646e6;
-  --c-accent-cta-active-bot: #3a3acc;
+  --c-accent: #a259ff;
+  --c-accent-light: #c08aff;
+  --c-accent-lighter: #d4b3ff;
+  --c-accent-bold: #b478ff;
+  --c-accent-deep: #8e3df0;
+  --c-accent-mid: #7a2ad9;
+  --c-accent-border: #4a1a8a;
+  --c-accent-tint: rgba(162, 89, 255, 0.12);
+  --c-accent-tint-hover: rgba(162, 89, 255, 0.22);
+  --c-accent-tint-soft: rgba(162, 89, 255, 0.06);
+  --c-accent-glow: rgba(162, 89, 255, 0.4);
+  --c-accent-glow-soft: rgba(162, 89, 255, 0.35);
+  --c-accent-glow-strong: rgba(162, 89, 255, 0.45);
+  --c-accent-glow-dashed: rgba(162, 89, 255, 0.6);
+  --c-accent-tint-text: rgba(212, 179, 255, 0.6);
+  --c-accent-cta-top: #9b4eff;
+  --c-accent-cta-bot: #7a2ad9;
+  --c-accent-cta-active-bot: #5d1ab0;
 
   --c-danger: #ff6b6b;
   --c-danger-strong: #ff3b3b;
@@ -124,7 +124,7 @@
   --c-bg-chip: #c8c8c8;
   --c-bg-chip-hover: #b8b8b8;
   --c-bg-section-active: #c0c0c0;
-  --c-bg-option-hover: #d8d8f0;
+  --c-bg-option-hover: #e8d8f5;
 
   --c-border: #b0b0b0;
   --c-border-soft: #c8c8c8;
@@ -172,24 +172,24 @@
   --c-hoverline-shadow: rgba(255, 255, 255, 0.6);
   --c-preset-glow: rgba(0, 0, 0, 0.4);
 
-  --c-accent: #5b58e8;
-  --c-accent-light: #6c6cff;
-  --c-accent-lighter: #4a48d8;
-  --c-accent-bold: #5b58e8;
-  --c-accent-deep: #4a48d8;
-  --c-accent-mid: #4a48d8;
-  --c-accent-border: #2a28b0;
-  --c-accent-tint: rgba(91, 88, 232, 0.16);
-  --c-accent-tint-hover: rgba(91, 88, 232, 0.26);
-  --c-accent-tint-soft: rgba(91, 88, 232, 0.08);
-  --c-accent-glow: rgba(91, 88, 232, 0.35);
-  --c-accent-glow-soft: rgba(91, 88, 232, 0.3);
-  --c-accent-glow-strong: rgba(91, 88, 232, 0.4);
-  --c-accent-glow-dashed: rgba(91, 88, 232, 0.55);
-  --c-accent-tint-text: rgba(91, 88, 232, 0.7);
-  --c-accent-cta-top: #6c6cff;
-  --c-accent-cta-bot: #5b58e8;
-  --c-accent-cta-active-bot: #4a48d8;
+  --c-accent: #7a2ad9;
+  --c-accent-light: #9b4eff;
+  --c-accent-lighter: #6a1fb8;
+  --c-accent-bold: #8e3df0;
+  --c-accent-deep: #6a1fb8;
+  --c-accent-mid: #5d1ab0;
+  --c-accent-border: #3a0d70;
+  --c-accent-tint: rgba(122, 42, 217, 0.16);
+  --c-accent-tint-hover: rgba(122, 42, 217, 0.26);
+  --c-accent-tint-soft: rgba(122, 42, 217, 0.08);
+  --c-accent-glow: rgba(122, 42, 217, 0.35);
+  --c-accent-glow-soft: rgba(122, 42, 217, 0.3);
+  --c-accent-glow-strong: rgba(122, 42, 217, 0.4);
+  --c-accent-glow-dashed: rgba(122, 42, 217, 0.55);
+  --c-accent-tint-text: rgba(122, 42, 217, 0.7);
+  --c-accent-cta-top: #9b4eff;
+  --c-accent-cta-bot: #7a2ad9;
+  --c-accent-cta-active-bot: #5d1ab0;
 
   --c-danger: #d83b3b;
   --c-danger-strong: #d83b3b;

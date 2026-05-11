@@ -2263,7 +2263,16 @@ export default function App() {
             </div>
             <div className="pr-row pr-row-end">
               <button
-                onClick={() => { setEffectiveCrop(DEFAULT_CROP); setAspectId('free'); setCropEnabled(true); setCropEditing(true); }}
+                onClick={() => {
+                  setAspectId('free');
+                  setCropEditing(false);
+                  if (cropMarkers.length === 0) {
+                    setCrop(DEFAULT_CROP);
+                    setCropEnabled(false);
+                  } else {
+                    setCropByZone(prev => ({ ...prev, [activeZoneKey]: { x: 0, y: 0, width: 1, height: 1 } }));
+                  }
+                }}
                 disabled={!videoPath || isBusy}
                 className="pr-btn pr-btn-ghost">
                 {t('resetCrop')}
