@@ -1343,17 +1343,27 @@ export default function Editor(props: EditorProps) {
     setSelectedMarker(null);
   }
 
+  const savePayloadRef = useRef<{ path: string; state: ProjectState } | null>(null);
   useEffect(() => {
-    if (!videoPath) return;
-    if (justLoadedRef.current) { justLoadedRef.current = false; return; }
-    const handle = setTimeout(() => {
-      saveProject(videoPath, {
+    if (!videoPath) { savePayloadRef.current = null; return; }
+    savePayloadRef.current = {
+      path: videoPath,
+      state: {
         silenceRegions, thresholdDb, autoThreshold, meanVolumeDb, minSilenceDur,
         cropEnabled, crop, cropBgColor, aspectId, volumeDb, noiseGateDb, noiseGateEnabled,
         srtPath, rawCues, style, language, model,
         splitMarkers, cropByZone, styleByZone, styleApplyToAll, excludedSegments,
         currentTime, timelineZoom, previewZoom, volume, muted, playbackRate,
-      });
+      },
+    };
+  });
+
+  useEffect(() => {
+    if (!videoPath) return;
+    if (justLoadedRef.current) { justLoadedRef.current = false; return; }
+    const handle = setTimeout(() => {
+      const p = savePayloadRef.current;
+      if (p) saveProject(p.path, p.state);
       setAutosaveTick('saved');
       setStorageStats(autosaveStats(videoPath));
       const t = setTimeout(() => setAutosaveTick('idle'), 1200);
@@ -1365,6 +1375,13 @@ export default function Editor(props: EditorProps) {
       srtPath, rawCues, style, language, model,
       splitMarkers, cropByZone, styleByZone, styleApplyToAll, excludedSegments,
       currentTime, timelineZoom, previewZoom, volume, muted, playbackRate]);
+
+  useEffect(() => {
+    return () => {
+      const p = savePayloadRef.current;
+      if (p) saveProject(p.path, p.state);
+    };
+  }, []);
 
   useEffect(() => {
     if (!videoPath) return;

@@ -14,6 +14,8 @@ contextBridge.exposeInMainWorld('subbi', {
   cancelExport: () => ipcRenderer.invoke('subbi:cancelExport'),
   extractPeaks: (opts: any) => ipcRenderer.invoke('subbi:extractPeaks', opts),
   writeSrt: (opts: any) => ipcRenderer.invoke('subbi:writeSrt', opts),
+  setTitleBarOverlay: (opts: { color: string; symbolColor: string }) =>
+    ipcRenderer.invoke('subbi:setTitleBarOverlay', opts),
   onProgress: (cb: (evt: any) => void) => {
     const listener = (_e: any, evt: any) => cb(evt);
     ipcRenderer.on('subbi:progress', listener);

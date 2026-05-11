@@ -57,6 +57,7 @@ interface SubbiAPI {
   extractPeaks(opts: { videoPath: string; targetBins?: number }):
     Promise<{ peaks: number[]; duration: number; sampleRate: number }>;
   writeSrt(opts: { srtPath: string; content: string }): Promise<string>;
+  setTitleBarOverlay?(opts: { color: string; symbolColor: string }): Promise<boolean>;
   onProgress(cb: (evt: SubbiProgressEvent) => void): () => void;
 }
 

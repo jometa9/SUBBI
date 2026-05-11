@@ -139,3 +139,12 @@ ipcMain.handle('subbi:writeSrt', async (_e, opts: { srtPath: string; content: st
   fs.writeFileSync(opts.srtPath, opts.content, 'utf8');
   return opts.srtPath;
 });
+
+ipcMain.handle('subbi:setTitleBarOverlay', async (_e, opts: { color: string; symbolColor: string }) => {
+  if (!mainWindow || process.platform !== 'win32') return false;
+  try {
+    mainWindow.setTitleBarOverlay({ color: opts.color, symbolColor: opts.symbolColor, height: 32 });
+    mainWindow.setBackgroundColor(opts.color);
+    return true;
+  } catch { return false; }
+});
