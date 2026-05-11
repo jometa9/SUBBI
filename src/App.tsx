@@ -74,6 +74,7 @@ const TRANSLATIONS: Record<UiLang, Record<string, string>> = {
     subtitleStyle: 'Subtitle style',
     font: 'Font', size: 'Size', vertical: 'Vertical', horizontal: 'Horizontal',
     color: 'Color', outline: 'Outline', outlineWidth: 'Outline width',
+    styleApplyToAll: 'Apply to all segments',
     textCase: 'Case', caseAsIs: 'As is', caseUpper: 'UPPERCASE', caseLower: 'lowercase',
     maxPerLine: 'Max words',
     couldNotReadPath: 'Could not read file path. Try "Open video".',
@@ -215,6 +216,7 @@ const TRANSLATIONS: Record<UiLang, Record<string, string>> = {
     subtitleStyle: 'Estilo del subtítulo',
     font: 'Fuente', size: 'Tamaño', vertical: 'Vertical', horizontal: 'Horizontal',
     color: 'Color', outline: 'Contorno', outlineWidth: 'Grosor del contorno',
+    styleApplyToAll: 'Aplicar a todos los segmentos',
     textCase: 'Mayús/minús', caseAsIs: 'Tal cual', caseUpper: 'MAYÚSCULAS', caseLower: 'minúsculas',
     maxPerLine: 'Máx palabras',
     couldNotReadPath: 'No se pudo leer la ruta del archivo. Probá con "Abrir video".',
@@ -483,6 +485,7 @@ type ProjectState = {
   cropMarkers?: number[];
   cropByZone?: Record<string, CropRect>;
   styleByZone?: Record<string, SubtitleStyle>;
+  styleApplyToAll?: boolean;
   excludedSegments?: Record<string, boolean>;
   currentTime?: number;
   timelineZoom?: number;
@@ -657,6 +660,7 @@ export default function App() {
   const [aspectId, setAspectId] = useState<string>('free');
   const [cropByZone, setCropByZone] = useState<Record<string, CropRect>>({});
   const [styleByZone, setStyleByZone] = useState<Record<string, SubtitleStyle>>({});
+  const [styleApplyToAll, setStyleApplyToAll] = useState<boolean>(true);
 
   const [volumeDb, setVolumeDb] = useState<number>(0);
   const [noiseGateDb, setNoiseGateDb] = useState<number>(-40);
@@ -755,17 +759,18 @@ export default function App() {
   }
 
   function styleForTime(t: number): SubtitleStyle {
+    if (styleApplyToAll) return style;
     const z = splitSegments.find(z => t >= z.start && t < z.end) ?? splitSegments[splitSegments.length - 1];
     return (z && styleByZone[z.key]) || style;
   }
-  const effectiveStyle: SubtitleStyle = splitMarkers.length > 0
+  const effectiveStyle: SubtitleStyle = (splitMarkers.length > 0 && !styleApplyToAll)
     ? (styleByZone[activeSegmentKey] ?? style)
     : style;
 
   function setEffectiveStyle(updater: SubtitleStyle | ((s: SubtitleStyle) => SubtitleStyle)) {
     const apply = (s: SubtitleStyle): SubtitleStyle =>
       typeof updater === 'function' ? (updater as (s: SubtitleStyle) => SubtitleStyle)(s) : updater;
-    if (splitMarkers.length === 0) {
+    if (splitMarkers.length === 0 || styleApplyToAll) {
       setStyle(prev => apply(prev));
     } else {
       setStyleByZone(prev => ({ ...prev, [activeSegmentKey]: apply(prev[activeSegmentKey] ?? style) }));
@@ -1263,7 +1268,7 @@ export default function App() {
         silenceRegions, thresholdDb, autoThreshold, meanVolumeDb, minSilenceDur,
         cropEnabled, crop, cropBgColor, aspectId, volumeDb, noiseGateDb, noiseGateEnabled,
         srtPath, rawCues, style, language, model,
-        splitMarkers, cropByZone, styleByZone, excludedSegments,
+        splitMarkers, cropByZone, styleByZone, styleApplyToAll, excludedSegments,
         currentTime, timelineZoom, previewZoom, volume, muted, playbackRate,
       });
     }
@@ -1294,6 +1299,7 @@ export default function App() {
       setSplitMarkers(saved.splitMarkers ?? []);
       setCropByZone(saved.cropByZone ?? {});
       setStyleByZone(saved.styleByZone ?? {});
+      setStyleApplyToAll(saved.styleApplyToAll ?? true);
       setExcludedSegments(saved.excludedSegments ?? {});
       if (saved.style) setStyle({ ...DEFAULT_STYLE, ...saved.style });
       if (saved.language) setLanguage(saved.language);
@@ -1325,6 +1331,7 @@ export default function App() {
       setSplitMarkers([]);
       setCropByZone({});
       setStyleByZone({});
+      setStyleApplyToAll(true);
       setExcludedSegments({});
       setCurrentTime(0);
       setTimelineZoom(1);
@@ -1342,7 +1349,7 @@ export default function App() {
         silenceRegions, thresholdDb, autoThreshold, meanVolumeDb, minSilenceDur,
         cropEnabled, crop, cropBgColor, aspectId, volumeDb, noiseGateDb, noiseGateEnabled,
         srtPath, rawCues, style, language, model,
-        splitMarkers, cropByZone, styleByZone, excludedSegments,
+        splitMarkers, cropByZone, styleByZone, styleApplyToAll, excludedSegments,
         currentTime, timelineZoom, previewZoom, volume, muted, playbackRate,
       });
       setAutosaveTick('saved');
@@ -1354,7 +1361,7 @@ export default function App() {
   }, [videoPath, silenceRegions, thresholdDb, autoThreshold, meanVolumeDb, minSilenceDur,
       cropEnabled, crop, cropBgColor, aspectId, volumeDb, noiseGateDb, noiseGateEnabled,
       srtPath, rawCues, style, language, model,
-      splitMarkers, cropByZone, styleByZone, excludedSegments,
+      splitMarkers, cropByZone, styleByZone, styleApplyToAll, excludedSegments,
       currentTime, timelineZoom, previewZoom, volume, muted, playbackRate]);
 
   useEffect(() => {
@@ -2641,6 +2648,16 @@ export default function App() {
             )}
           </button>
           <div className="pr-section-body">
+            {splitMarkers.length > 0 && (
+              <div className="pr-row">
+                <label className="pr-check">
+                  <input type="checkbox"
+                         checked={styleApplyToAll}
+                         onChange={e => setStyleApplyToAll(e.target.checked)} />
+                  <span>{t('styleApplyToAll')}</span>
+                </label>
+              </div>
+            )}
             <div className="pr-row">
               <span className="pr-label">{t('font')}</span>
               <Select
