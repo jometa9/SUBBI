@@ -1,9 +1,22 @@
-import { spawn } from 'child_process';
+import { spawn, type ChildProcess } from 'child_process';
 import path from 'path';
 import fs from 'fs';
 import os from 'os';
 import { randomUUID } from 'crypto';
 import { findFfmpeg, parseDurationFromStderr, parseTimeFromStderr } from './ffmpeg';
+
+let currentExportChild: ChildProcess | null = null;
+let cancelRequested = false;
+
+export function cancelExport(): boolean {
+  cancelRequested = true;
+  const child = currentExportChild;
+  if (child && !child.killed) {
+    try { child.kill('SIGKILL'); } catch {}
+    return true;
+  }
+  return false;
+}
 
 export interface SubtitleStyle {
   fontName: string;
@@ -31,10 +44,13 @@ export interface ExportOptions {
   videoPath: string;
   keepRanges?: KeepRange[];
   crop?: CropNormalized | null;
+  cropBgColor?: 'black' | 'white';
   subtitles?: { srtPath: string; style: SubtitleStyle } | null;
   volumeDb?: number;
   noiseGateDb?: number | null;
   outputPath?: string;
+  videoWidth?: number;
+  videoHeight?: number;
 }
 
 type Cue = { start: number; end: number; text: string };
@@ -110,22 +126,61 @@ function resegmentByWords(cues: Cue[], maxWords: number): Cue[] {
   return out;
 }
 
-function transformSrt(srtPath: string, style: SubtitleStyle): string {
-  const needsResegment = style.maxWords && style.maxWords > 0;
-  const needsCase = style.textCase !== 'asis';
-  if (!needsResegment && !needsCase) return srtPath;
+function fmtAssTs(sec: number): string {
+  if (sec < 0) sec = 0;
+  const h = Math.floor(sec / 3600);
+  const m = Math.floor((sec % 3600) / 60);
+  const s = Math.floor(sec % 60);
+  const cs = Math.round((sec - Math.floor(sec)) * 100);
+  const pad = (n: number, w = 2) => String(n).padStart(w, '0');
+  return `${h}:${pad(m)}:${pad(s)}.${pad(cs)}`;
+}
+
+function escAssText(text: string): string {
+  return text.replace(/\r\n/g, '\\N').replace(/\n/g, '\\N').replace(/,/g, '‚');
+}
+
+function buildAssFromSrt(srtPath: string, style: SubtitleStyle, videoW: number, videoH: number): string {
   const raw = fs.readFileSync(srtPath, 'utf8');
   let cues = parseSrt(raw);
-  if (needsResegment) cues = resegmentByWords(cues, style.maxWords);
-  if (needsCase) {
+  if (style.maxWords && style.maxWords > 0) cues = resegmentByWords(cues, style.maxWords);
+  if (style.textCase !== 'asis') {
     cues = cues.map(c => ({
       ...c,
       text: style.textCase === 'upper' ? c.text.toLocaleUpperCase() : c.text.toLocaleLowerCase(),
     }));
   }
-  const out = path.join(os.tmpdir(), 'subbi', `${randomUUID()}.srt`);
+  const marginV = Math.max(0, Math.round(videoH * (style.marginVPct / 100)));
+  const hShift = Math.round(videoW * ((style.marginHPct || 0) / 100));
+  const marginL = Math.max(0, 2 * hShift);
+  const marginR = Math.max(0, -2 * hShift);
+  const outlineOn = style.outlineEnabled !== false;
+  const bold = style.fontWeight === 'normal' ? 0 : -1;
+  const primary = hexToAssColor(style.color);
+  const outlineCol = hexToAssColor(style.outline);
+  const header = [
+    '[Script Info]',
+    'ScriptType: v4.00+',
+    'Collisions: Normal',
+    `PlayResX: ${videoW}`,
+    `PlayResY: ${videoH}`,
+    'ScaledBorderAndShadow: yes',
+    'WrapStyle: 0',
+    '',
+    '[V4+ Styles]',
+    'Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding',
+    `Style: Default,${style.fontName},${style.fontSize},${primary},${primary},${outlineCol},&H00000000,${bold},0,0,0,100,100,0,0,1,${outlineOn ? Math.max(1, Math.round(style.fontSize * 0.08)) : 0},0,2,${marginL},${marginR},${marginV},1`,
+    '',
+    '[Events]',
+    'Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text',
+  ];
+  const events = cues.map(c =>
+    `Dialogue: 0,${fmtAssTs(c.start)},${fmtAssTs(c.end)},Default,,0,0,0,,${escAssText(c.text)}`
+  );
+  const content = [...header, ...events, ''].join('\n');
+  const out = path.join(os.tmpdir(), 'subbi', `${randomUUID()}.ass`);
   fs.mkdirSync(path.dirname(out), { recursive: true });
-  fs.writeFileSync(out, formatSrt(cues), 'utf8');
+  fs.writeFileSync(out, content, 'utf8');
   return out;
 }
 
@@ -133,34 +188,27 @@ function escapeForFilter(p: string): string {
   return p.replace(/\\/g, '/').replace(/:/g, '\\:').replace(/'/g, "\\'");
 }
 
-function buildSubtitlesFilter(srtPath: string, style: SubtitleStyle): string {
-  const marginV = Math.round(720 * (style.marginVPct / 100));
-  const hShift = Math.round(1280 * ((style.marginHPct || 0) / 100));
-  const marginL = Math.max(0, 2 * hShift);
-  const marginR = Math.max(0, -2 * hShift);
-  const outlineOn = style.outlineEnabled !== false;
-  const styleParts = [
-    `FontName=${style.fontName}`,
-    `FontSize=${style.fontSize}`,
-    `PrimaryColour=${hexToAssColor(style.color)}`,
-    `OutlineColour=${hexToAssColor(style.outline)}`,
-    `BorderStyle=1`, `Outline=${outlineOn ? 2 : 0}`, `Shadow=0`,
-    `Alignment=2`,
-    `MarginV=${marginV}`,
-    `MarginL=${marginL}`, `MarginR=${marginR}`,
-    `Bold=${style.fontWeight === 'normal' ? 0 : 1}`,
-  ].join(',');
-  return `subtitles='${escapeForFilter(srtPath)}':force_style='${styleParts}'`;
+function buildSubtitlesFilter(assPath: string): string {
+  return `ass='${escapeForFilter(assPath)}'`;
 }
 
 function clamp01(v: number): number { return Math.min(1, Math.max(0, v)); }
 
-function buildCropFilter(c: CropNormalized): string {
-  const x = clamp01(c.x);
-  const y = clamp01(c.y);
-  const w = clamp01(c.width);
-  const h = clamp01(c.height);
-  return `crop='trunc(iw*${w}/2)*2':'trunc(ih*${h}/2)*2':'trunc(iw*${x}/2)*2':'trunc(ih*${y}/2)*2'`;
+function buildCropFilter(c: CropNormalized, bgColor: 'black' | 'white' = 'black'): string {
+  const innerX = clamp01(c.x);
+  const innerY = clamp01(c.y);
+  const innerW = clamp01(c.x + c.width) - innerX;
+  const innerH = clamp01(c.y + c.height) - innerY;
+  const extendsOutside =
+    c.x < -1e-6 || c.y < -1e-6 || c.x + c.width > 1 + 1e-6 || c.y + c.height > 1 + 1e-6;
+  const cropPart = `crop='trunc(iw*${innerW}/2)*2':'trunc(ih*${innerH}/2)*2':'trunc(iw*${innerX}/2)*2':'trunc(ih*${innerY}/2)*2'`;
+  if (!extendsOutside) return cropPart;
+  const wFactor = c.width / Math.max(1e-6, innerW);
+  const hFactor = c.height / Math.max(1e-6, innerH);
+  const xFactor = (innerX - c.x) / Math.max(1e-6, innerW);
+  const yFactor = (innerY - c.y) / Math.max(1e-6, innerH);
+  const padPart = `pad='trunc(iw*${wFactor}/2)*2':'trunc(ih*${hFactor}/2)*2':'trunc(iw*${xFactor}/2)*2':'trunc(ih*${yFactor}/2)*2':color=${bgColor}`;
+  return `${cropPart},${padPart}`;
 }
 
 export async function exportVideo(
@@ -181,14 +229,16 @@ export async function exportVideo(
     .sort((a, b) => a.start - b.start);
   const willCut = ranges.length > 0;
 
-  const srtTransformed = opts.subtitles
-    ? transformSrt(opts.subtitles.srtPath, opts.subtitles.style)
+  const subVideoW = opts.videoWidth && opts.videoWidth > 0 ? opts.videoWidth : 1280;
+  const subVideoH = opts.videoHeight && opts.videoHeight > 0 ? opts.videoHeight : 720;
+  const assPath = opts.subtitles
+    ? buildAssFromSrt(opts.subtitles.srtPath, opts.subtitles.style, subVideoW, subVideoH)
     : null;
 
   const preChain: string[] = [];
   let preLabel = '[0:v]';
-  if (opts.crop) preChain.push(buildCropFilter(opts.crop));
-  if (srtTransformed && opts.subtitles) preChain.push(buildSubtitlesFilter(srtTransformed, opts.subtitles.style));
+  if (opts.crop) preChain.push(buildCropFilter(opts.crop, opts.cropBgColor || 'black'));
+  if (assPath) preChain.push(buildSubtitlesFilter(assPath));
 
   const filterParts: string[] = [];
   let videoSourceLabel: string;
@@ -277,8 +327,14 @@ export async function exportVideo(
   let totalSec: number | null = null;
   onProgress(0, 'evt:export.starting');
 
+  if (cancelRequested) {
+    cancelRequested = false;
+    throw new Error('evt:export.cancelled');
+  }
+
   return await new Promise<string>((resolve, reject) => {
     const child = spawn(ffmpeg, args);
+    currentExportChild = child;
     let err = '';
     let lastMilestone = -1;
     child.stderr.on('data', (d) => {
@@ -301,17 +357,30 @@ export async function exportVideo(
         }
       }
     });
-    child.on('error', reject);
-    child.on('close', (code) => {
-      if (srtTransformed && srtTransformed !== opts.subtitles?.srtPath) {
-        try { fs.unlinkSync(srtTransformed); } catch {}
+    child.on('error', (e) => {
+      currentExportChild = null;
+      reject(e);
+    });
+    child.on('close', (code, signal) => {
+      currentExportChild = null;
+      if (assPath) {
+        try { fs.unlinkSync(assPath); } catch {}
       }
       if (filterScriptPath) {
         try { fs.unlinkSync(filterScriptPath); } catch {}
       }
+      if (cancelRequested) {
+        cancelRequested = false;
+        try { if (fs.existsSync(outPath)) fs.unlinkSync(outPath); } catch {}
+        reject(new Error('evt:export.cancelled'));
+        return;
+      }
       if (code === 0) {
         onProgress(100, 'evt:export.done');
         resolve(outPath);
+      } else if (signal) {
+        try { if (fs.existsSync(outPath)) fs.unlinkSync(outPath); } catch {}
+        reject(new Error('evt:export.cancelled'));
       } else {
         reject(new Error('evt:err.export'));
       }

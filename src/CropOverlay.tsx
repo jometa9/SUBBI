@@ -10,6 +10,11 @@ interface Props {
   onApply?: () => void;
   onUserResize?: () => void;
   applyLabel?: string;
+  fitLabel?: string;
+  fillLabel?: string;
+  onFit?: () => void;
+  onFill?: () => void;
+  bgColor?: 'black' | 'white';
 }
 
 type DragMode =
@@ -17,8 +22,6 @@ type DragMode =
   | { kind: 'resize'; handle: Handle; startX: number; startY: number; orig: CropRect };
 
 type Handle = 'n' | 's' | 'e' | 'w' | 'ne' | 'nw' | 'se' | 'sw';
-
-function clamp(v: number, lo: number, hi: number) { return Math.min(hi, Math.max(lo, v)); }
 
 function getRenderedVideoRect(v: HTMLVideoElement): { left: number; top: number; width: number; height: number } | null {
   const cw = v.clientWidth;
@@ -43,6 +46,21 @@ function getRenderedVideoRect(v: HTMLVideoElement): { left: number; top: number;
 
 const HANDLES: Handle[] = ['n', 's', 'e', 'w', 'ne', 'nw', 'se', 'sw'];
 
+function overlayBtnStyle(kind: 'primary' | 'secondary'): React.CSSProperties {
+  return {
+    padding: '4px 10px',
+    fontSize: 12,
+    fontWeight: 600,
+    fontFamily: 'inherit',
+    background: kind === 'primary' ? 'var(--c-accent)' : 'var(--c-surface-strong, rgba(20,20,20,0.85))',
+    color: kind === 'primary' ? 'var(--c-text-strong)' : 'var(--c-text-strong, #fff)',
+    border: '1px solid ' + (kind === 'primary' ? 'var(--c-accent-border)' : 'var(--c-border, rgba(255,255,255,0.25))'),
+    borderRadius: 4,
+    cursor: 'pointer',
+    boxShadow: '0 1px 3px var(--c-shadow-mid)',
+  };
+}
+
 const HANDLE_STYLE: Record<Handle, React.CSSProperties> = {
   n:  { top: -5, left: '50%', transform: 'translate(-50%, 0)', cursor: 'ns-resize' },
   s:  { bottom: -5, left: '50%', transform: 'translate(-50%, 0)', cursor: 'ns-resize' },
@@ -54,7 +72,7 @@ const HANDLE_STYLE: Record<Handle, React.CSSProperties> = {
   sw: { bottom: -5, left: -5, cursor: 'nesw-resize' },
 };
 
-export default function CropOverlay({ videoEl, crop, aspectRatio, onChange, onApply, onUserResize, applyLabel = 'Apply' }: Props) {
+export default function CropOverlay({ videoEl, crop, aspectRatio, onChange, onApply, onUserResize, applyLabel = 'Apply', fitLabel = 'Fit', fillLabel = 'Fill', onFit, onFill, bgColor = 'black' }: Props) {
   const overlayRef = useRef<HTMLDivElement>(null);
   const [, force] = useState(0);
   const dragRef = useRef<DragMode | null>(null);
@@ -84,17 +102,11 @@ export default function CropOverlay({ videoEl, crop, aspectRatio, onChange, onAp
   }, [aspectRatio]);
 
   function applyAspectRatio(c: CropRect, ar: number, vw: number, vh: number): CropRect {
-    let w = c.width;
-    let h = (w * vw) / (vh * ar);
-    if (h > 1) {
-      h = 1;
-      w = (h * vh * ar) / vw;
-    }
+    const w = c.width;
+    const h = (w * vw) / (vh * ar);
     const cx = c.x + c.width / 2;
     const cy = c.y + c.height / 2;
-    let x = clamp(cx - w / 2, 0, 1 - w);
-    let y = clamp(cy - h / 2, 0, 1 - h);
-    return { x, y, width: w, height: h };
+    return { x: cx - w / 2, y: cy - h / 2, width: w, height: h };
   }
 
   function startDrag(e: React.PointerEvent, mode: DragMode) {
@@ -114,8 +126,8 @@ export default function CropOverlay({ videoEl, crop, aspectRatio, onChange, onAp
     if (drag.kind === 'move') {
       const w = drag.orig.width;
       const h = drag.orig.height;
-      const x = clamp(drag.orig.x + dxNorm, 0, 1 - w);
-      const y = clamp(drag.orig.y + dyNorm, 0, 1 - h);
+      const x = drag.orig.x + dxNorm;
+      const y = drag.orig.y + dyNorm;
       onChange({ x, y, width: w, height: h });
       return;
     }
@@ -123,15 +135,15 @@ export default function CropOverlay({ videoEl, crop, aspectRatio, onChange, onAp
     let { x, y, width, height } = drag.orig;
     const handle = drag.handle;
     const minSize = 0.05;
-    if (handle.includes('e')) width = clamp(drag.orig.width + dxNorm, minSize, 1 - drag.orig.x);
+    if (handle.includes('e')) width = Math.max(minSize, drag.orig.width + dxNorm);
     if (handle.includes('w')) {
-      const nx = clamp(drag.orig.x + dxNorm, 0, drag.orig.x + drag.orig.width - minSize);
+      const nx = Math.min(drag.orig.x + dxNorm, drag.orig.x + drag.orig.width - minSize);
       width = drag.orig.x + drag.orig.width - nx;
       x = nx;
     }
-    if (handle.includes('s')) height = clamp(drag.orig.height + dyNorm, minSize, 1 - drag.orig.y);
+    if (handle.includes('s')) height = Math.max(minSize, drag.orig.height + dyNorm);
     if (handle.includes('n')) {
-      const ny = clamp(drag.orig.y + dyNorm, 0, drag.orig.y + drag.orig.height - minSize);
+      const ny = Math.min(drag.orig.y + dyNorm, drag.orig.y + drag.orig.height - minSize);
       height = drag.orig.y + drag.orig.height - ny;
       y = ny;
     }
@@ -141,16 +153,13 @@ export default function CropOverlay({ videoEl, crop, aspectRatio, onChange, onAp
       const vh = videoEl.videoHeight;
       if (handle === 'n' || handle === 's') {
         const newW = (height * vh * aspectRatio) / vw;
-        if (handle === 'n') x = clamp(drag.orig.x + drag.orig.width / 2 - newW / 2, 0, 1 - newW);
-        else x = clamp(drag.orig.x + drag.orig.width / 2 - newW / 2, 0, 1 - newW);
-        width = Math.min(newW, 1);
+        x = drag.orig.x + drag.orig.width / 2 - newW / 2;
+        width = newW;
       } else {
         const newH = (width * vw) / (vh * aspectRatio);
-        if (handle.includes('n')) y = clamp(drag.orig.y + drag.orig.height - newH, 0, 1 - newH);
-        height = Math.min(newH, 1);
+        if (handle.includes('n')) y = drag.orig.y + drag.orig.height - newH;
+        height = newH;
       }
-      if (x + width > 1) { width = 1 - x; height = (width * vw) / (vh * aspectRatio); }
-      if (y + height > 1) { height = 1 - y; width = (height * vh * aspectRatio) / vw; }
     }
 
     onChange({ x, y, width, height });
@@ -186,14 +195,31 @@ export default function CropOverlay({ videoEl, crop, aspectRatio, onChange, onAp
     >
       <svg
         width="100%" height="100%"
-        style={{ position: 'absolute', inset: 0, pointerEvents: 'none' }}
+        style={{ position: 'absolute', inset: 0, pointerEvents: 'none', overflow: 'visible' }}
       >
         <defs>
           <mask id="cropMask">
             <rect x="0" y="0" width="100%" height="100%" fill="white" />
             <rect x={boxLeft} y={boxTop} width={boxW} height={boxH} fill="black" />
           </mask>
+          <clipPath id="cropClip">
+            <rect x={boxLeft} y={boxTop} width={boxW} height={boxH} />
+          </clipPath>
+          <mask id="videoMask">
+            <rect x="0" y="0" width="100%" height="100%" fill="white" />
+            <rect x={renderedRect.left} y={renderedRect.top} width={renderedRect.width} height={renderedRect.height} fill="black" />
+          </mask>
         </defs>
+        <g clipPath="url(#cropClip)">
+          <rect
+            x={boxLeft}
+            y={boxTop}
+            width={boxW}
+            height={boxH}
+            fill={bgColor === 'white' ? '#ffffff' : '#000000'}
+            mask="url(#videoMask)"
+          />
+        </g>
         <rect x="0" y="0" width="100%" height="100%" fill="rgba(0,0,0,0.30)" mask="url(#cropMask)" />
       </svg>
 
@@ -219,29 +245,39 @@ export default function CropOverlay({ videoEl, crop, aspectRatio, onChange, onAp
             'linear-gradient(to bottom, transparent 33.33%, rgba(255,255,255,0.4) 33.33%, rgba(255,255,255,0.4) calc(33.33% + 1px), transparent calc(33.33% + 1px), transparent 66.66%, rgba(255,255,255,0.4) 66.66%, rgba(255,255,255,0.4) calc(66.66% + 1px), transparent calc(66.66% + 1px))',
           pointerEvents: 'none',
         }} />
-        {onApply && (
-          <button
-            type="button"
-            onPointerDown={(e) => e.stopPropagation()}
-            onClick={(e) => { e.stopPropagation(); onApply(); }}
-            style={{
-              position: 'absolute',
-              top: -32,
-              right: 0,
-              padding: '4px 10px',
-              fontSize: 12,
-              fontWeight: 600,
-              fontFamily: 'inherit',
-              background: 'var(--c-accent)',
-              color: 'var(--c-text-strong)',
-              border: '1px solid var(--c-accent-border)',
-              borderRadius: 4,
-              cursor: 'pointer',
-              pointerEvents: 'auto',
-              boxShadow: '0 1px 3px var(--c-shadow-mid)',
-            }}
-          >{applyLabel}</button>
-        )}
+        <div
+          style={{
+            position: 'absolute',
+            top: -32,
+            right: 0,
+            display: 'flex',
+            gap: 6,
+            pointerEvents: 'auto',
+          }}
+          onPointerDown={(e) => e.stopPropagation()}
+        >
+          {onFit && (
+            <button
+              type="button"
+              onClick={(e) => { e.stopPropagation(); onFit(); }}
+              style={overlayBtnStyle('secondary')}
+            >{fitLabel}</button>
+          )}
+          {onFill && (
+            <button
+              type="button"
+              onClick={(e) => { e.stopPropagation(); onFill(); }}
+              style={overlayBtnStyle('secondary')}
+            >{fillLabel}</button>
+          )}
+          {onApply && (
+            <button
+              type="button"
+              onClick={(e) => { e.stopPropagation(); onApply(); }}
+              style={overlayBtnStyle('primary')}
+            >{applyLabel}</button>
+          )}
+        </div>
         {HANDLES.map(h => (
           <div
             key={h}

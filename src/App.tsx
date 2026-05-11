@@ -103,6 +103,8 @@ const TRANSLATIONS: Record<UiLang, Record<string, string>> = {
     exportNow: 'Export video',
     exporting: 'Exporting',
     exportDone: 'Export complete',
+    cancelExport: 'Cancel export',
+    exportCancelled: 'Export cancelled.',
     nothingToExport: 'No edits to export — nothing to do.',
     showInFolder: 'Show in folder',
     untitledProject: 'Untitled Project',
@@ -137,7 +139,17 @@ const TRANSLATIONS: Record<UiLang, Record<string, string>> = {
     cropActiveZone: 'Active zone {n}/{total}',
     cropApply: 'Apply',
     cropEdit: 'Edit',
+    cropFit: 'Fit',
+    cropFill: 'Fill',
+    cropBg: 'Background',
+    cropBgBlack: 'Black',
+    cropBgWhite: 'White',
     exportPartsHint: 'Export will produce one file per segment.',
+    excludeSegment: 'Exclude from export',
+    includeSegment: 'Include in export',
+    segmentLabel: 'Segment {n}',
+    segmentsIncluded: 'included',
+    segmentsCountTip: '{in} included · {out} excluded',
     zoomTimeline: 'Zoom timeline',
     zoomReset: 'Reset zoom',
     'log.transcribe.extractingAudio': 'Preparing audio…',
@@ -150,6 +162,8 @@ const TRANSLATIONS: Record<UiLang, Record<string, string>> = {
     'log.export.starting': 'Preparing export…',
     'log.export.progress': 'Exporting: {pct}%',
     'log.export.done': 'Export finished.',
+    'log.export.cancelled': 'Export cancelled.',
+    'log.export.segment': 'Exporting segment {n}/{total}…',
     'log.cut.starting': 'Trimming silences…',
     'log.cut.progress': 'Trimming: {pct}%',
     'log.cut.done': 'Trim finished.',
@@ -230,6 +244,8 @@ const TRANSLATIONS: Record<UiLang, Record<string, string>> = {
     exportNow: 'Exportar video',
     exporting: 'Exportando',
     exportDone: 'Exportación completa',
+    cancelExport: 'Cancelar exportación',
+    exportCancelled: 'Exportación cancelada.',
     nothingToExport: 'No hay ediciones para exportar.',
     showInFolder: 'Mostrar en carpeta',
     untitledProject: 'Proyecto sin título',
@@ -264,7 +280,17 @@ const TRANSLATIONS: Record<UiLang, Record<string, string>> = {
     cropActiveZone: 'Zona activa {n}/{total}',
     cropApply: 'Aplicar',
     cropEdit: 'Editar',
+    cropFit: 'Encajar',
+    cropFill: 'Rellenar',
+    cropBg: 'Fondo',
+    cropBgBlack: 'Negro',
+    cropBgWhite: 'Blanco',
     exportPartsHint: 'Se exportará un archivo por cada segmento.',
+    excludeSegment: 'Excluir del export',
+    includeSegment: 'Incluir en el export',
+    segmentLabel: 'Segmento {n}',
+    segmentsIncluded: 'incluidos',
+    segmentsCountTip: '{in} incluidos · {out} excluidos',
     zoomTimeline: 'Zoom de la timeline',
     zoomReset: 'Restablecer zoom',
     'log.transcribe.extractingAudio': 'Preparando audio…',
@@ -277,6 +303,8 @@ const TRANSLATIONS: Record<UiLang, Record<string, string>> = {
     'log.export.starting': 'Preparando exportación…',
     'log.export.progress': 'Exportando: {pct}%',
     'log.export.done': 'Exportación finalizada.',
+    'log.export.cancelled': 'Exportación cancelada.',
+    'log.export.segment': 'Exportando segmento {n}/{total}…',
     'log.cut.starting': 'Quitando silencios…',
     'log.cut.progress': 'Quitando silencios: {pct}%',
     'log.cut.done': 'Silencios quitados.',
@@ -439,6 +467,7 @@ type ProjectState = {
   minSilenceDur: number;
   cropEnabled: boolean;
   crop: CropRect;
+  cropBgColor: 'black' | 'white';
   aspectId: string;
   volumeDb: number;
   noiseGateDb: number;
@@ -451,6 +480,8 @@ type ProjectState = {
   splitMarkers?: number[];
   cropMarkers?: number[];
   cropByZone?: Record<string, CropRect>;
+  styleByZone?: Record<string, SubtitleStyle>;
+  excludedSegments?: Record<string, boolean>;
   currentTime?: number;
   timelineZoom?: number;
   previewZoom?: number;
@@ -620,10 +651,10 @@ export default function App() {
   const [cropEnabled, setCropEnabled] = useState<boolean>(false);
   const [cropEditing, setCropEditing] = useState<boolean>(false);
   const [crop, setCrop] = useState<CropRect>(DEFAULT_CROP);
+  const [cropBgColor, setCropBgColor] = useState<'black' | 'white'>('black');
   const [aspectId, setAspectId] = useState<string>('free');
-  const [cropMarkers, setCropMarkers] = useState<number[]>([]);
   const [cropByZone, setCropByZone] = useState<Record<string, CropRect>>({});
-  const [selectedCropMarker, setSelectedCropMarker] = useState<number | null>(null);
+  const [styleByZone, setStyleByZone] = useState<Record<string, SubtitleStyle>>({});
 
   const [volumeDb, setVolumeDb] = useState<number>(0);
   const [noiseGateDb, setNoiseGateDb] = useState<number>(-40);
@@ -639,97 +670,104 @@ export default function App() {
 
   const [splitMarkers, setSplitMarkers] = useState<number[]>([]);
   const [selectedMarker, setSelectedMarker] = useState<number | null>(null);
+  const [excludedSegments, setExcludedSegments] = useState<Record<string, boolean>>({});
 
   function addSplitAtCurrent() {
     if (!videoDuration) return;
     const t = Math.max(0, Math.min(videoDuration, currentTime));
-    setSplitMarkers(prev => {
-      if (prev.some(m => Math.abs(m - t) < 0.05)) return prev;
-      return [...prev, t].sort((a, b) => a - b);
-    });
+    if (splitMarkers.some(m => Math.abs(m - t) < 0.05)) return;
+    const seedCrop = cropForTime(t);
+    const seedStyle = styleForTime(t);
+    const newKey = t.toFixed(3);
+    setSplitMarkers(prev => [...prev, t].sort((a, b) => a - b));
+    setCropByZone(prev => (prev[newKey] ? prev : { ...prev, [newKey]: seedCrop }));
+    setStyleByZone(prev => (prev[newKey] ? prev : { ...prev, [newKey]: seedStyle }));
   }
   function removeSelectedMarker() {
     if (selectedMarker == null) return;
+    const targetKey = selectedMarker.toFixed(3);
     setSplitMarkers(prev => prev.filter(m => Math.abs(m - selectedMarker) > 1e-6));
+    setCropByZone(prev => {
+      if (!prev[targetKey]) return prev;
+      const next = { ...prev };
+      delete next[targetKey];
+      return next;
+    });
+    setStyleByZone(prev => {
+      if (!prev[targetKey]) return prev;
+      const next = { ...prev };
+      delete next[targetKey];
+      return next;
+    });
     setSelectedMarker(null);
   }
 
-  const cropZones = useMemo(() => {
+  const splitSegments = useMemo(() => {
     const dur = videoDuration || 0;
-    const inner = [...cropMarkers]
+    const inner = [...splitMarkers]
       .filter(m => m > 0.01 && (dur === 0 || m < dur - 0.01))
       .sort((a, b) => a - b);
     const bounds = [0, ...inner, dur];
-    const zones: { key: string; start: number; end: number }[] = [];
+    const segs: { key: string; start: number; end: number }[] = [];
     for (let i = 0; i < bounds.length - 1; i++) {
       const s = bounds[i];
       const e = bounds[i + 1];
       if (e - s < 1e-6) continue;
-      zones.push({ key: s.toFixed(3), start: s, end: e });
+      segs.push({ key: s.toFixed(3), start: s, end: e });
     }
-    if (zones.length === 0) zones.push({ key: '0.000', start: 0, end: dur });
-    return zones;
-  }, [cropMarkers, videoDuration]);
+    if (segs.length === 0 && dur > 0) segs.push({ key: '0.000', start: 0, end: dur });
+    return segs;
+  }, [splitMarkers, videoDuration]);
 
-  const activeZoneIdx = useMemo(() => {
-    const i = cropZones.findIndex(z => currentTime >= z.start && currentTime < z.end);
-    return i >= 0 ? i : cropZones.length - 1;
-  }, [cropZones, currentTime]);
-  const activeZone = cropZones[activeZoneIdx] ?? cropZones[0];
-  const activeZoneKey = activeZone?.key ?? '0.000';
+  function toggleSegmentExcluded(key: string) {
+    setExcludedSegments(prev => {
+      const next = { ...prev };
+      if (next[key]) delete next[key]; else next[key] = true;
+      return next;
+    });
+  }
+
+  const activeSegmentIdx = useMemo(() => {
+    const i = splitSegments.findIndex(z => currentTime >= z.start && currentTime < z.end);
+    return i >= 0 ? i : splitSegments.length - 1;
+  }, [splitSegments, currentTime]);
+  const activeSegment = splitSegments[activeSegmentIdx] ?? splitSegments[0];
+  const activeSegmentKey = activeSegment?.key ?? '0.000';
 
   function cropForTime(t: number): CropRect {
-    const z = cropZones.find(z => t >= z.start && t < z.end) ?? cropZones[cropZones.length - 1];
+    const z = splitSegments.find(z => t >= z.start && t < z.end) ?? splitSegments[splitSegments.length - 1];
     return (z && cropByZone[z.key]) || crop;
   }
-  const effectiveCrop: CropRect = cropMarkers.length > 0
-    ? (cropByZone[activeZoneKey] ?? crop)
+  const effectiveCrop: CropRect = splitMarkers.length > 0
+    ? (cropByZone[activeSegmentKey] ?? crop)
     : crop;
 
   function setEffectiveCrop(updater: CropRect | ((c: CropRect) => CropRect)) {
     const apply = (c: CropRect): CropRect =>
       typeof updater === 'function' ? (updater as (c: CropRect) => CropRect)(c) : updater;
-    if (cropMarkers.length === 0) {
+    if (splitMarkers.length === 0) {
       setCrop(prev => apply(prev));
     } else {
-      setCropByZone(prev => ({ ...prev, [activeZoneKey]: apply(prev[activeZoneKey] ?? crop) }));
+      setCropByZone(prev => ({ ...prev, [activeSegmentKey]: apply(prev[activeSegmentKey] ?? crop) }));
     }
   }
 
-  function addCropZoneAtCurrent() {
-    if (!videoDuration) return;
-    const t = Math.max(0.01, Math.min(videoDuration - 0.01, currentTime));
-    if (cropMarkers.some(m => Math.abs(m - t) < 0.05)) return;
-    const seed = effectiveCrop;
-    setCropMarkers(prev => [...prev, t].sort((a, b) => a - b));
-    setCropByZone(prev => {
-      const k = t.toFixed(3);
-      if (prev[k]) return prev;
-      return { ...prev, [k]: seed };
-    });
+  function styleForTime(t: number): SubtitleStyle {
+    const z = splitSegments.find(z => t >= z.start && t < z.end) ?? splitSegments[splitSegments.length - 1];
+    return (z && styleByZone[z.key]) || style;
   }
+  const effectiveStyle: SubtitleStyle = splitMarkers.length > 0
+    ? (styleByZone[activeSegmentKey] ?? style)
+    : style;
 
-  function removeCropZoneNearCurrent() {
-    if (cropMarkers.length === 0) return;
-    let removed: number | null = null;
-    if (selectedCropMarker != null) {
-      removed = selectedCropMarker;
+  function setEffectiveStyle(updater: SubtitleStyle | ((s: SubtitleStyle) => SubtitleStyle)) {
+    const apply = (s: SubtitleStyle): SubtitleStyle =>
+      typeof updater === 'function' ? (updater as (s: SubtitleStyle) => SubtitleStyle)(s) : updater;
+    if (splitMarkers.length === 0) {
+      setStyle(prev => apply(prev));
     } else {
-      let bestDist = Infinity;
-      cropMarkers.forEach(m => {
-        const d = Math.abs(m - currentTime);
-        if (d < bestDist) { bestDist = d; removed = m; }
-      });
+      setStyleByZone(prev => ({ ...prev, [activeSegmentKey]: apply(prev[activeSegmentKey] ?? style) }));
     }
-    if (removed == null) return;
-    const target = removed;
-    setCropMarkers(prev => prev.filter(m => Math.abs(m - target) > 1e-6));
-    setCropByZone(prev => {
-      const next = { ...prev };
-      delete next[target.toFixed(3)];
-      return next;
-    });
-    setSelectedCropMarker(null);
   }
 
   const [confirmReset, setConfirmReset] = useState<string | null>(null);
@@ -759,9 +797,7 @@ export default function App() {
     setCrop(DEFAULT_CROP);
     setAspectId('free');
     setCropEnabled(false);
-    setCropMarkers([]);
     setCropByZone({});
-    setSelectedCropMarker(null);
   }
   function resetSilence() {
     setSilenceRegions([]);
@@ -774,10 +810,22 @@ export default function App() {
     setNoiseGateDb(-40);
     setNoiseGateEnabled(false);
   }
-  function resetStyle() { setStyle({ ...DEFAULT_STYLE }); }
+  function resetStyle() {
+    if (splitMarkers.length > 0) {
+      setStyleByZone(prev => {
+        const next = { ...prev };
+        delete next[activeSegmentKey];
+        return next;
+      });
+    } else {
+      setStyle({ ...DEFAULT_STYLE });
+      setStyleByZone({});
+    }
+  }
   function resetSplits() {
     setSplitMarkers([]);
     setSelectedMarker(null);
+    setExcludedSegments({});
   }
   function renderSectionReset(key: string, run: () => void, canReset: boolean) {
     const armed = confirmReset === key;
@@ -933,6 +981,10 @@ export default function App() {
   };
   const videoRef = useRef<HTMLVideoElement>(null);
   const [, bumpVideoEl] = useState(0);
+  const logRef = useRef<HTMLPreElement>(null);
+  const logStickRef = useRef(true);
+  const exportCancelRef = useRef(false);
+  const [cancellingExport, setCancellingExport] = useState(false);
 
   const cues = useMemo(
     () => rawCues ? resegmentByWords(rawCues, style.maxWords) : null,
@@ -941,15 +993,23 @@ export default function App() {
 
   const activeCue = useMemo(() => {
     if (!cues) return null;
-    return cues.find(c => currentTime >= c.start && currentTime <= c.end) ?? null;
+    return cues.find(c => currentTime >= c.start && currentTime < c.end) ?? null;
   }, [cues, currentTime]);
 
   useEffect(() => {
     const v = videoRef.current;
     if (!v) return;
-    const onTime = () => setCurrentTime(v.currentTime);
-    const onPlay = () => setIsPlaying(true);
-    const onPause = () => setIsPlaying(false);
+    let rafId = 0;
+    const tick = () => {
+      setCurrentTime(v.currentTime);
+      rafId = requestAnimationFrame(tick);
+    };
+    const startRaf = () => { if (!rafId) rafId = requestAnimationFrame(tick); };
+    const stopRaf = () => { if (rafId) { cancelAnimationFrame(rafId); rafId = 0; } };
+    const onTime = () => { if (!rafId) setCurrentTime(v.currentTime); };
+    const onPlay = () => { setIsPlaying(true); startRaf(); };
+    const onPause = () => { setIsPlaying(false); stopRaf(); setCurrentTime(v.currentTime); };
+    const onSeeked = () => setCurrentTime(v.currentTime);
     const onMeta = () => {
       if (v.duration && isFinite(v.duration)) setVideoDuration(d => d || v.duration);
       const p = pendingPlaybackRef.current;
@@ -970,12 +1030,16 @@ export default function App() {
     v.addEventListener('timeupdate', onTime);
     v.addEventListener('play', onPlay);
     v.addEventListener('pause', onPause);
+    v.addEventListener('seeked', onSeeked);
     v.addEventListener('loadedmetadata', onMeta);
     v.addEventListener('volumechange', onVol);
+    if (!v.paused) startRaf();
     return () => {
+      stopRaf();
       v.removeEventListener('timeupdate', onTime);
       v.removeEventListener('play', onPlay);
       v.removeEventListener('pause', onPause);
+      v.removeEventListener('seeked', onSeeked);
       v.removeEventListener('loadedmetadata', onMeta);
       v.removeEventListener('volumechange', onVol);
     };
@@ -1163,6 +1227,13 @@ export default function App() {
     return off;
   }, [uiLang]);
 
+  const logText = (proc.phase === 'transcribing' || proc.phase === 'exporting') ? proc.log : '';
+  useEffect(() => {
+    const el = logRef.current;
+    if (!el) return;
+    if (logStickRef.current) el.scrollTop = el.scrollHeight;
+  }, [logText]);
+
   const justLoadedRef = useRef(false);
   const pendingPlaybackRef = useRef<{ currentTime?: number; volume?: number; muted?: boolean; playbackRate?: number } | null>(null);
   const [autosaveTick, setAutosaveTick] = useState<'idle' | 'saved'>('idle');
@@ -1188,9 +1259,9 @@ export default function App() {
     if (videoPath && videoPath !== filePath) {
       saveProject(videoPath, {
         silenceRegions, thresholdDb, autoThreshold, meanVolumeDb, minSilenceDur,
-        cropEnabled, crop, aspectId, volumeDb, noiseGateDb, noiseGateEnabled,
+        cropEnabled, crop, cropBgColor, aspectId, volumeDb, noiseGateDb, noiseGateEnabled,
         srtPath, rawCues, style, language, model,
-        splitMarkers, cropMarkers, cropByZone,
+        splitMarkers, cropByZone, styleByZone, excludedSegments,
         currentTime, timelineZoom, previewZoom, volume, muted, playbackRate,
       });
     }
@@ -1211,6 +1282,7 @@ export default function App() {
       setMinSilenceDur(saved.minSilenceDur ?? 0.5);
       setCropEnabled(saved.cropEnabled ?? false);
       setCrop(saved.crop ?? DEFAULT_CROP);
+      setCropBgColor(saved.cropBgColor ?? 'black');
       setAspectId(saved.aspectId ?? 'free');
       setVolumeDb(saved.volumeDb ?? 0);
       setNoiseGateDb(saved.noiseGateDb ?? -40);
@@ -1218,8 +1290,9 @@ export default function App() {
       setSrtPath(saved.srtPath ?? null);
       setRawCues(saved.rawCues ?? null);
       setSplitMarkers(saved.splitMarkers ?? []);
-      setCropMarkers(saved.cropMarkers ?? []);
       setCropByZone(saved.cropByZone ?? {});
+      setStyleByZone(saved.styleByZone ?? {});
+      setExcludedSegments(saved.excludedSegments ?? {});
       if (saved.style) setStyle({ ...DEFAULT_STYLE, ...saved.style });
       if (saved.language) setLanguage(saved.language);
       if (saved.model) setModel(saved.model);
@@ -1242,13 +1315,15 @@ export default function App() {
       setRawCues(null);
       setCropEnabled(false);
       setCrop(DEFAULT_CROP);
+      setCropBgColor('black');
       setAspectId('free');
       setVolumeDb(0);
       setNoiseGateDb(-40);
       setNoiseGateEnabled(false);
       setSplitMarkers([]);
-      setCropMarkers([]);
       setCropByZone({});
+      setStyleByZone({});
+      setExcludedSegments({});
       setCurrentTime(0);
       setTimelineZoom(1);
       setPreviewZoom(1);
@@ -1263,9 +1338,9 @@ export default function App() {
     const handle = setTimeout(() => {
       saveProject(videoPath, {
         silenceRegions, thresholdDb, autoThreshold, meanVolumeDb, minSilenceDur,
-        cropEnabled, crop, aspectId, volumeDb, noiseGateDb, noiseGateEnabled,
+        cropEnabled, crop, cropBgColor, aspectId, volumeDb, noiseGateDb, noiseGateEnabled,
         srtPath, rawCues, style, language, model,
-        splitMarkers, cropMarkers, cropByZone,
+        splitMarkers, cropByZone, styleByZone, excludedSegments,
         currentTime, timelineZoom, previewZoom, volume, muted, playbackRate,
       });
       setAutosaveTick('saved');
@@ -1275,9 +1350,9 @@ export default function App() {
     }, 400);
     return () => clearTimeout(handle);
   }, [videoPath, silenceRegions, thresholdDb, autoThreshold, meanVolumeDb, minSilenceDur,
-      cropEnabled, crop, aspectId, volumeDb, noiseGateDb, noiseGateEnabled,
+      cropEnabled, crop, cropBgColor, aspectId, volumeDb, noiseGateDb, noiseGateEnabled,
       srtPath, rawCues, style, language, model,
-      splitMarkers, cropMarkers, cropByZone,
+      splitMarkers, cropByZone, styleByZone, excludedSegments,
       currentTime, timelineZoom, previewZoom, volume, muted, playbackRate]);
 
   useEffect(() => {
@@ -1369,6 +1444,7 @@ export default function App() {
 
   async function transcribe() {
     if (!videoPath) return;
+    logStickRef.current = true;
     setProc({ phase: 'transcribing', pct: 0, log: '' });
     try {
       const r = await window.subbi.transcribe({ videoPath, language, model });
@@ -1405,6 +1481,11 @@ export default function App() {
     }
     if (videoDuration > prev + 0.02) segmentBounds.push({ start: prev, end: videoDuration });
     if (segmentBounds.length === 0) segmentBounds.push({ start: 0, end: videoDuration });
+    const includedBounds = segmentBounds.filter(seg => !excludedSegments[seg.start.toFixed(3)]);
+    if (includedBounds.length === 0) {
+      setProc({ phase: 'error', message: t('nothingToExport') });
+      return;
+    }
 
     const baseKeep = hasSilence ? buildKeepRanges() : null;
     function rangesForSegment(seg: { start: number; end: number }) {
@@ -1420,29 +1501,43 @@ export default function App() {
     const dot = file.lastIndexOf('.');
     const base = dot > 0 ? file.substring(0, dot) : file;
     const ext = dot > 0 ? file.substring(dot) : '.mp4';
-    const multi = segmentBounds.length > 1;
+    const multi = includedBounds.length > 1;
 
+    logStickRef.current = true;
+    exportCancelRef.current = false;
+    setCancellingExport(false);
     setProc({ phase: 'exporting', pct: 0, log: '' });
     try {
       const outputs: string[] = [];
-      const total = segmentBounds.length;
+      const total = includedBounds.length;
       for (let i = 0; i < total; i++) {
-        const seg = segmentBounds[i];
+        if (exportCancelRef.current) throw new Error('evt:export.cancelled');
+        const seg = includedBounds[i];
         const segKeep = rangesForSegment(seg);
         if (segKeep.length === 0) continue;
+        const segLabel = t('log.export.segment')
+          .replace('{n}', String(i + 1))
+          .replace('{total}', String(total));
+        setProc(p => p.phase === 'exporting'
+          ? { ...p, log: (p.log + segLabel + '\n').slice(-2000) }
+          : p);
         const useKeep = hasSilence || multi;
         const outName = multi ? `${base}.subbi.${i + 1}${ext}` : `${base}.subbi${ext}`;
         const outputPath = `${dir}${sep}${outName}`;
         const hasEditedCues = !!(rawCues && rawCues.some(c => c.edited));
-        const burnStyle = hasEditedCues ? { ...style, maxWords: 0 } : style;
+        const segStyle = styleForTime(seg.start);
+        const burnStyle = hasEditedCues ? { ...segStyle, maxWords: 0 } : segStyle;
         const segOut = await window.subbi.exportVideo({
           videoPath,
           keepRanges: useKeep ? segKeep : undefined,
           crop: hasCrop ? cropForTime(seg.start) : null,
+          cropBgColor: hasCrop ? cropBgColor : undefined,
           subtitles: hasSubs ? { srtPath: srtPath!, style: burnStyle } : null,
           volumeDb: hasVolume ? volumeDb : 0,
           noiseGateDb: hasGate ? noiseGateDb : null,
           outputPath,
+          videoWidth: videoW || undefined,
+          videoHeight: videoH || undefined,
         });
         outputs.push(segOut);
         setProc(p => p.phase === 'exporting'
@@ -1451,20 +1546,42 @@ export default function App() {
       }
       setProc({ phase: 'exported', outPath: multi ? `${outputs.length} files in ${dir}` : outputs[0] });
     } catch (err: any) {
-      setProc({ phase: 'error', message: tEvt(String(err?.message || err)) || String(err?.message || err) });
+      const raw = String(err?.message || err);
+      if (raw.includes('evt:export.cancelled') || exportCancelRef.current) {
+        setProc({ phase: 'error', message: t('exportCancelled') });
+      } else {
+        setProc({ phase: 'error', message: tEvt(raw) || raw });
+      }
+    } finally {
+      exportCancelRef.current = false;
+      setCancellingExport(false);
     }
   }
 
+  function cancelExportNow() {
+    exportCancelRef.current = true;
+    setCancellingExport(true);
+    try { window.subbi.cancelExport?.(); } catch {}
+  }
+
+  const _videoNativeW = videoRef.current?.videoWidth ?? 0;
+  const _videoNativeH = videoRef.current?.videoHeight ?? 0;
+  const previewDisplayScale = (() => {
+    if (!_videoNativeW || !_videoNativeH) return previewZoom;
+    if (previewZoom !== 1) return previewZoom;
+    if (stageSize.w <= 0 || stageSize.h <= 0) return 1;
+    return Math.min(stageSize.w / _videoNativeW, stageSize.h / _videoNativeH);
+  })();
   const overlayStyle: React.CSSProperties = {
-    bottom: `${style.marginVPct}%`,
-    left: `${style.marginHPct}%`,
-    right: `${-style.marginHPct}%`,
-    fontFamily: style.fontName,
-    fontSize: `${style.fontSize * previewZoom}px`,
-    color: style.color,
-    fontWeight: style.fontWeight === 'bold' ? 700 : style.fontWeight === 'semibold' ? 600 : 400,
-    ['--outline' as any]: style.outlineEnabled ? style.outline : 'transparent',
-    textShadow: style.outlineEnabled ? undefined : 'none',
+    bottom: `${effectiveStyle.marginVPct}%`,
+    left: `${effectiveStyle.marginHPct}%`,
+    right: `${-effectiveStyle.marginHPct}%`,
+    fontFamily: effectiveStyle.fontName,
+    fontSize: `${effectiveStyle.fontSize * previewDisplayScale}px`,
+    color: effectiveStyle.color,
+    fontWeight: effectiveStyle.fontWeight === 'bold' ? 700 : effectiveStyle.fontWeight === 'semibold' ? 600 : 400,
+    ['--outline' as any]: effectiveStyle.outlineEnabled ? effectiveStyle.outline : 'transparent',
+    textShadow: effectiveStyle.outlineEnabled ? undefined : 'none',
   };
 
   function beginEditCue() {
@@ -1502,10 +1619,12 @@ export default function App() {
   }
 
   const previewText = activeCue
-    ? applyCase(activeCue.text, style.textCase)
-    : applyCase(t('sampleSubtitle'), style.textCase);
+    ? applyCase(activeCue.text, effectiveStyle.textCase)
+    : applyCase(t('sampleSubtitle'), effectiveStyle.textCase);
 
   const isBusy = proc.phase === 'transcribing' || proc.phase === 'detecting' || proc.phase === 'exporting';
+  const isEditBusy = proc.phase === 'exporting';
+  const isSilenceBusy = proc.phase === 'detecting' || proc.phase === 'exporting';
 
   const aspectRatio = ASPECT_PRESETS.find(a => a.id === aspectId)?.ratio ?? null;
 
@@ -1532,6 +1651,34 @@ export default function App() {
     setAspectId('free');
     setCropEnabled(true);
     setCropEditing(true);
+  }
+
+  function applyCropFit() {
+    if (aspectRatio == null || !videoW || !videoH) return;
+    const videoAr = videoW / videoH;
+    if (videoAr > aspectRatio) {
+      const w = 1;
+      const h = videoW / (videoH * aspectRatio);
+      setEffectiveCrop({ x: 0, y: (1 - h) / 2, width: w, height: h });
+    } else {
+      const h = 1;
+      const w = (videoH * aspectRatio) / videoW;
+      setEffectiveCrop({ x: (1 - w) / 2, y: 0, width: w, height: h });
+    }
+  }
+
+  function applyCropFill() {
+    if (aspectRatio == null || !videoW || !videoH) return;
+    const videoAr = videoW / videoH;
+    if (videoAr > aspectRatio) {
+      const h = 1;
+      const w = (videoH * aspectRatio) / videoW;
+      setEffectiveCrop({ x: (1 - w) / 2, y: 0, width: w, height: h });
+    } else {
+      const w = 1;
+      const h = videoW / (videoH * aspectRatio);
+      setEffectiveCrop({ x: 0, y: (1 - h) / 2, width: w, height: h });
+    }
   }
 
   const rulerTicks = useMemo(() => {
@@ -1717,7 +1864,7 @@ export default function App() {
                 if (confirmReset === 'all') { resetAllEdits(); clearArmedReset(); }
                 else armReset('all');
               }}
-              disabled={isBusy}
+              disabled={isEditBusy}
               title={t('resetEditsTitle')}>
               <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
                 <path d="M3 12a9 9 0 1 0 3-6.7" />
@@ -1759,19 +1906,21 @@ export default function App() {
           }
           const baseW = videoRef.current?.videoWidth || 1280;
           const baseH = videoRef.current?.videoHeight || 720;
+          const cropBg = cropBgColor === 'white' ? '#ffffff' : '#000000';
           const wrapStyle: React.CSSProperties | undefined = previewZoom !== 1
             ? (cropApplied
                 ? {
                     width: `${baseW * crop.width * previewZoom}px`,
                     height: `${baseH * crop.height * previewZoom}px`,
                     overflow: 'hidden',
+                    backgroundColor: cropBg,
                   }
                 : {
                     width: `${baseW * previewZoom}px`,
                     height: `${baseH * previewZoom}px`,
                   })
             : (cropApplied && croppedWrapW > 0
-                ? { width: `${croppedWrapW}px`, height: `${croppedWrapH}px`, overflow: 'hidden' }
+                ? { width: `${croppedWrapW}px`, height: `${croppedWrapH}px`, overflow: 'hidden', backgroundColor: cropBg }
                 : undefined);
           const videoStyle: React.CSSProperties | undefined = cropApplied ? {
             position: 'absolute',
@@ -1830,10 +1979,10 @@ export default function App() {
                     onBlur={commitEditCue}
                     onClick={(e) => e.stopPropagation()}
                     style={{
-                      fontFamily: style.fontName,
-                      fontSize: `${style.fontSize * previewZoom}px`,
-                      color: style.color,
-                      fontWeight: style.fontWeight === 'bold' ? 700 : style.fontWeight === 'semibold' ? 600 : 400,
+                      fontFamily: effectiveStyle.fontName,
+                      fontSize: `${effectiveStyle.fontSize * previewDisplayScale}px`,
+                      color: effectiveStyle.color,
+                      fontWeight: effectiveStyle.fontWeight === 'bold' ? 700 : effectiveStyle.fontWeight === 'semibold' ? 600 : 400,
                       textAlign: 'center',
                     }}
                   />
@@ -1850,6 +1999,11 @@ export default function App() {
                   onApply={() => setCropEditing(false)}
                   onUserResize={() => setAspectId('free')}
                   applyLabel={t('cropApply')}
+                  fitLabel={t('cropFit')}
+                  fillLabel={t('cropFill')}
+                  onFit={aspectRatio != null ? applyCropFit : undefined}
+                  onFill={aspectRatio != null ? applyCropFill : undefined}
+                  bgColor={cropBgColor}
                 />
               )}
             </div>
@@ -1883,7 +2037,7 @@ export default function App() {
             <button
               className="vc-btn vc-split-btn"
               onClick={addSplitAtCurrent}
-              disabled={!videoDuration || isBusy}
+              disabled={!videoDuration || isEditBusy}
               title={t('splitHere')}
             >
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -1898,7 +2052,7 @@ export default function App() {
               <button
                 className="vc-btn vc-split-remove"
                 onClick={removeSelectedMarker}
-                disabled={isBusy}
+                disabled={isEditBusy}
                 title={t('removeSplit')}
               >
                 <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
@@ -1911,34 +2065,18 @@ export default function App() {
                 {splitMarkers.length} {t('splitsBadge')}
               </span>
             )}
-            <button
-              className="vc-btn vc-split-btn"
-              onClick={addCropZoneAtCurrent}
-              disabled={!videoDuration || isBusy}
-              title={t('cropZoneHere')}
-            >
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M6 2v14a2 2 0 0 0 2 2h14" />
-                <path d="M2 6h14a2 2 0 0 1 2 2v14" />
-              </svg>
-            </button>
-            {cropMarkers.length > 0 && (
-              <>
-                <button
-                  className="vc-btn vc-split-remove"
-                  onClick={removeCropZoneNearCurrent}
-                  disabled={isBusy}
-                  title={t('cropZoneRemove')}
+            {splitSegments.length > 1 && (() => {
+              const excludedCount = splitSegments.filter(s => excludedSegments[s.key]).length;
+              const includedCount = splitSegments.length - excludedCount;
+              return (
+                <span
+                  className="vc-split-count"
+                  title={t('segmentsCountTip').replace('{in}', String(includedCount)).replace('{out}', String(excludedCount))}
                 >
-                  <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
-                    <path d="M18.3 5.71L12 12.01l-6.3-6.3-1.4 1.4 6.29 6.3-6.29 6.29 1.4 1.42 6.3-6.3 6.3 6.3 1.4-1.42-6.29-6.29 6.29-6.3z"/>
-                  </svg>
-                </button>
-                <span className="vc-split-count" title={t('cropActiveZone').replace('{n}', String(activeZoneIdx + 1)).replace('{total}', String(cropZones.length))}>
-                  {cropZones.length} {t('cropZonesBadge')}
+                  {includedCount}/{splitSegments.length} {t('segmentsIncluded')}
                 </span>
-              </>
-            )}
+              );
+            })()}
             <span className="vc-spacer" />
             <span className="vc-zoom-icon" title={`${t('zoomTimeline')}: ${timelineZoom.toFixed(1)}x`}>
               <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
@@ -2015,6 +2153,28 @@ export default function App() {
                     />
                   )}
                   {videoDuration > 0 && (
+                    <div className="audio-strip-exportbar">
+                      {splitSegments.map((seg, i) => {
+                        const widthPct = ((seg.end - seg.start) / videoDuration) * 100;
+                        const excluded = !!excludedSegments[seg.key];
+                        return (
+                          <button
+                            key={seg.key}
+                            type="button"
+                            className={'audio-strip-exportseg' + (excluded ? ' is-excluded' : '')}
+                            style={{ width: `${widthPct}%` }}
+                            onClick={() => toggleSegmentExcluded(seg.key)}
+                            title={excluded ? t('includeSegment') : t('excludeSegment')}
+                          >
+                            <span className="audio-strip-exportseg-label">
+                              {t('segmentLabel').replace('{n}', String(i + 1))}
+                            </span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
+                  {videoDuration > 0 && (
                     <div className="audio-strip-ruler">
                       {rulerTicks.minor.map((t, i) => (
                         <div
@@ -2068,9 +2228,6 @@ export default function App() {
                       splitMarkers={splitMarkers}
                       selectedMarker={selectedMarker}
                       onSelectMarker={setSelectedMarker}
-                      cropMarkers={cropMarkers}
-                      selectedCropMarker={selectedCropMarker}
-                      onSelectCropMarker={setSelectedCropMarker}
                       theme={resolvedTheme}
                     />
                   </div>
@@ -2093,7 +2250,7 @@ export default function App() {
                   type="range"
                   min={-30} max={30} step={1}
                   value={volumeDb}
-                  disabled={!videoPath || isBusy}
+                  disabled={!videoPath || isEditBusy}
                   onChange={e => setVolumeDb(+e.target.value)}
                   className="pr-range pr-range-v"
                   style={rangePct(volumeDb, -30, 30)}
@@ -2105,14 +2262,14 @@ export default function App() {
                   type="button"
                   className={'audio-fader-key audio-fader-key-btn has-tip' + (noiseGateEnabled ? ' is-on' : '')}
                   onClick={() => setNoiseGateEnabled(v => !v)}
-                  disabled={!videoPath || isBusy}
+                  disabled={!videoPath || isEditBusy}
                   data-tip={`${t('audioGate')}: ${noiseGateEnabled ? `${noiseGateDb} dB` : t('audioGateOff')}`}
                 >N</button>
                 <input
                   type="range"
                   min={-80} max={-20} step={1}
                   value={noiseGateDb}
-                  disabled={!videoPath || isBusy || !noiseGateEnabled}
+                  disabled={!videoPath || isEditBusy || !noiseGateEnabled}
                   onChange={e => setNoiseGateDb(+e.target.value)}
                   className="pr-range pr-range-v"
                   style={rangePct(noiseGateDb, -80, -20)}
@@ -2133,13 +2290,13 @@ export default function App() {
             <span className="pr-section-chev" />
             <span className="pr-section-title">{t('sectionCrop')}</span>
             {cropEnabled && <span className="pr-badge">ON</span>}
-            {cropMarkers.length > 0 && (
-              <span className="pr-badge">{cropZones.length} {t('cropZonesBadge')}</span>
+            {splitMarkers.length > 0 && Object.keys(cropByZone).length > 0 && (
+              <span className="pr-badge">{splitSegments.length} {t('cropZonesBadge')}</span>
             )}
             {renderSectionReset(
               'crop',
               resetCrop,
-              cropEnabled || aspectId !== 'free' || cropMarkers.length > 0 || crop.x !== DEFAULT_CROP.x || crop.y !== DEFAULT_CROP.y || crop.width !== DEFAULT_CROP.width || crop.height !== DEFAULT_CROP.height
+              cropEnabled || aspectId !== 'free' || Object.keys(cropByZone).length > 0 || crop.x !== DEFAULT_CROP.x || crop.y !== DEFAULT_CROP.y || crop.width !== DEFAULT_CROP.width || crop.height !== DEFAULT_CROP.height
             )}
           </button>
           <div className="pr-section-body">
@@ -2149,7 +2306,7 @@ export default function App() {
                 {ASPECT_PRESETS.map(p => (
                   <button
                     key={p.id}
-                    disabled={!videoPath || isBusy}
+                    disabled={!videoPath || isEditBusy}
                     onClick={() => {
                       setAspectId(p.id);
                       setCropEnabled(true);
@@ -2160,6 +2317,42 @@ export default function App() {
                 ))}
               </div>
             </div>
+            <div className="pr-row">
+              <span className="pr-label">{t('cropBg')}</span>
+              <div className="pr-aspect-row">
+                <button
+                  type="button"
+                  disabled={!videoPath || isEditBusy}
+                  onClick={() => setCropBgColor('black')}
+                  className={'pr-chip' + (cropBgColor === 'black' ? ' pr-chip-on' : '')}
+                >{t('cropBgBlack')}</button>
+                <button
+                  type="button"
+                  disabled={!videoPath || isEditBusy}
+                  onClick={() => setCropBgColor('white')}
+                  className={'pr-chip' + (cropBgColor === 'white' ? ' pr-chip-on' : '')}
+                >{t('cropBgWhite')}</button>
+              </div>
+            </div>
+            {aspectRatio != null && (
+              <div className="pr-row">
+                <span className="pr-label">&nbsp;</span>
+                <div className="pr-aspect-row">
+                  <button
+                    type="button"
+                    disabled={!videoPath || !videoW || isEditBusy}
+                    onClick={() => { setCropEnabled(true); setCropEditing(true); applyCropFit(); }}
+                    className="pr-chip"
+                  >{t('cropFit')}</button>
+                  <button
+                    type="button"
+                    disabled={!videoPath || !videoW || isEditBusy}
+                    onClick={() => { setCropEnabled(true); setCropEditing(true); applyCropFill(); }}
+                    className="pr-chip"
+                  >{t('cropFill')}</button>
+                </div>
+              </div>
+            )}
             <div className="pr-row pr-crop-px-row">
               <span className="pr-label">{t('cropPixels')}</span>
               <div className="pr-crop-px-grid">
@@ -2168,7 +2361,7 @@ export default function App() {
                   <input
                     type="number" min={0} step={1}
                     value={cropPxX}
-                    disabled={!videoPath || !videoW || isBusy}
+                    disabled={!videoPath || !videoW || isEditBusy}
                     onChange={(e) => updateCropFromPixels({ x: +e.target.value })}
                     className="pr-input pr-crop-px-input"
                   />
@@ -2178,7 +2371,7 @@ export default function App() {
                   <input
                     type="number" min={0} step={1}
                     value={cropPxY}
-                    disabled={!videoPath || !videoH || isBusy}
+                    disabled={!videoPath || !videoH || isEditBusy}
                     onChange={(e) => updateCropFromPixels({ y: +e.target.value })}
                     className="pr-input pr-crop-px-input"
                   />
@@ -2188,7 +2381,7 @@ export default function App() {
                   <input
                     type="number" min={1} step={1}
                     value={cropPxW}
-                    disabled={!videoPath || !videoW || isBusy}
+                    disabled={!videoPath || !videoW || isEditBusy}
                     onChange={(e) => updateCropFromPixels({ w: +e.target.value })}
                     className="pr-input pr-crop-px-input"
                   />
@@ -2198,7 +2391,7 @@ export default function App() {
                   <input
                     type="number" min={1} step={1}
                     value={cropPxH}
-                    disabled={!videoPath || !videoH || isBusy}
+                    disabled={!videoPath || !videoH || isEditBusy}
                     onChange={(e) => updateCropFromPixels({ h: +e.target.value })}
                     className="pr-input pr-crop-px-input"
                   />
@@ -2211,7 +2404,7 @@ export default function App() {
                 <button
                   type="button"
                   className="pr-chip"
-                  disabled={!videoPath || isBusy}
+                  disabled={!videoPath || isEditBusy}
                   title="Center horizontally"
                   onClick={() => setEffectiveCrop(c => ({ ...c, x: (1 - c.width) / 2 }))}
                 >
@@ -2220,7 +2413,7 @@ export default function App() {
                 <button
                   type="button"
                   className="pr-chip"
-                  disabled={!videoPath || isBusy}
+                  disabled={!videoPath || isEditBusy}
                   title="Center vertically"
                   onClick={() => setEffectiveCrop(c => ({ ...c, y: (1 - c.height) / 2 }))}
                 >
@@ -2229,7 +2422,7 @@ export default function App() {
                 <button
                   type="button"
                   className="pr-chip"
-                  disabled={!videoPath || isBusy}
+                  disabled={!videoPath || isEditBusy}
                   title="Center both"
                   onClick={() => setEffectiveCrop(c => ({ ...c, x: (1 - c.width) / 2, y: (1 - c.height) / 2 }))}
                 >
@@ -2237,55 +2430,39 @@ export default function App() {
                 </button>
               </div>
             </div>
-            <div className="pr-row">
-              <span className="pr-label">{t('cropZonesBadge')}</span>
-              <div className="pr-aspect-row" style={{ flex: 1, flexDirection: 'column', alignItems: 'stretch' }}>
-                <button
-                  type="button"
-                  className="pr-chip"
-                  disabled={!videoPath || !videoDuration || isBusy}
-                  onClick={addCropZoneAtCurrent}
-                  title={t('cropZoneHere')}
-                >+ {t('cropZoneHere')}</button>
-                <button
-                  type="button"
-                  className="pr-chip"
-                  disabled={!videoPath || cropMarkers.length === 0 || isBusy}
-                  onClick={removeCropZoneNearCurrent}
-                  title={t('cropZoneRemove')}
-                >− {t('cropZoneRemove')}</button>
-                {cropMarkers.length > 0 && (
-                  <span className="pr-value">
-                    {t('cropActiveZone').replace('{n}', String(activeZoneIdx + 1)).replace('{total}', String(cropZones.length))}
-                  </span>
-                )}
+            {splitMarkers.length > 0 && (
+              <div className="pr-row">
+                <span className="pr-label">{t('cropZonesBadge')}</span>
+                <span className="pr-value">
+                  {t('cropActiveZone').replace('{n}', String(activeSegmentIdx + 1)).replace('{total}', String(splitSegments.length))}
+                </span>
               </div>
-            </div>
+            )}
             <div className="pr-row pr-row-end">
               <button
                 onClick={() => {
                   setAspectId('free');
                   setCropEditing(false);
-                  if (cropMarkers.length === 0) {
+                  if (splitMarkers.length === 0) {
                     setCrop(DEFAULT_CROP);
                     setCropEnabled(false);
                   } else {
-                    setCropByZone(prev => ({ ...prev, [activeZoneKey]: { x: 0, y: 0, width: 1, height: 1 } }));
+                    setCropByZone(prev => ({ ...prev, [activeSegmentKey]: { x: 0, y: 0, width: 1, height: 1 } }));
                   }
                 }}
-                disabled={!videoPath || isBusy}
+                disabled={!videoPath || isEditBusy}
                 className="pr-btn pr-btn-ghost">
                 {t('resetCrop')}
               </button>
               <button
                 onClick={() => setCropEditing(v => !v)}
-                disabled={!cropEnabled || isBusy}
+                disabled={!cropEnabled || isEditBusy}
                 className="pr-btn pr-btn-ghost">
                 {cropEditing ? t('cropApply') : t('cropEdit')}
               </button>
               <button
                 onClick={() => { setCropEnabled(false); setCropEditing(false); }}
-                disabled={!cropEnabled || isBusy}
+                disabled={!cropEnabled || isEditBusy}
                 className="pr-btn pr-btn-ghost">
                 {t('disableCrop')}
               </button>
@@ -2310,7 +2487,7 @@ export default function App() {
             <div className="pr-row">
               <span className="pr-label">{t('threshold')}</span>
               <input type="range" min={-60} max={-10} step={1} value={thresholdDb}
-                     disabled={isBusy || autoThreshold}
+                     disabled={isSilenceBusy || autoThreshold}
                      onChange={e => setThresholdDb(+e.target.value)}
                      style={rangePct(thresholdDb, -60, -10)}
                      className="pr-range pr-range-flex" />
@@ -2319,7 +2496,7 @@ export default function App() {
             <div className="pr-row">
               <span className="pr-label">{t('minDuration')}</span>
               <input type="range" min={0.1} max={2} step={0.05} value={minSilenceDur}
-                     disabled={isBusy}
+                     disabled={isSilenceBusy}
                      onChange={e => setMinSilenceDur(+e.target.value)}
                      style={rangePct(minSilenceDur, 0.1, 2)}
                      className="pr-range pr-range-flex" />
@@ -2327,13 +2504,13 @@ export default function App() {
             </div>
             <div className="pr-row">
               <label className="pr-check">
-                <input type="checkbox" checked={autoThreshold} disabled={isBusy}
+                <input type="checkbox" checked={autoThreshold} disabled={isSilenceBusy}
                        onChange={e => setAutoThreshold(e.target.checked)} />
                 <span>{t('autoMean')}{meanVolumeDb != null ? ` · ${meanVolumeDb.toFixed(1)} dB` : ''}</span>
               </label>
             </div>
             <div className="pr-row pr-row-end">
-              <button onClick={detectSilencesNow} disabled={!videoPath || isBusy} className="pr-btn">
+              <button onClick={detectSilencesNow} disabled={!videoPath || isSilenceBusy} className="pr-btn">
                 {proc.phase === 'detecting' ? `${t('detecting')}…` : t('detectSilences')}
               </button>
             </div>
@@ -2360,7 +2537,7 @@ export default function App() {
             <div className="pr-row">
               <span className="pr-label">{t('audioGain')}</span>
               <input type="range" min={-30} max={30} step={1} value={volumeDb}
-                     disabled={!videoPath || isBusy}
+                     disabled={!videoPath || isEditBusy}
                      onChange={e => setVolumeDb(+e.target.value)}
                      style={rangePct(volumeDb, -30, 30)}
                      className="pr-range pr-range-flex" />
@@ -2369,7 +2546,7 @@ export default function App() {
             <div className="pr-row pr-row-end">
               <button
                 onClick={() => setVolumeDb(0)}
-                disabled={!videoPath || isBusy || volumeDb === 0}
+                disabled={!videoPath || isEditBusy || volumeDb === 0}
                 className="pr-btn pr-btn-ghost">
                 {t('resetCrop')}
               </button>
@@ -2380,7 +2557,7 @@ export default function App() {
               <label className="pr-check">
                 <input type="checkbox"
                        checked={noiseGateEnabled}
-                       disabled={!videoPath || isBusy}
+                       disabled={!videoPath || isEditBusy}
                        onChange={e => setNoiseGateEnabled(e.target.checked)} />
                 <span>{t('audioGate')}</span>
               </label>
@@ -2388,7 +2565,7 @@ export default function App() {
             <div className="pr-row">
               <span className="pr-label">{t('threshold')}</span>
               <input type="range" min={-80} max={-20} step={1} value={noiseGateDb}
-                     disabled={!videoPath || isBusy || !noiseGateEnabled}
+                     disabled={!videoPath || isEditBusy || !noiseGateEnabled}
                      onChange={e => setNoiseGateDb(+e.target.value)}
                      style={rangePct(noiseGateDb, -80, -20)}
                      className="pr-range pr-range-flex" />
@@ -2451,7 +2628,8 @@ export default function App() {
             {renderSectionReset(
               'style',
               resetStyle,
-              (Object.keys(DEFAULT_STYLE) as (keyof SubtitleStyle)[]).some(k => (style as any)[k] !== (DEFAULT_STYLE as any)[k])
+              (Object.keys(DEFAULT_STYLE) as (keyof SubtitleStyle)[]).some(k => (effectiveStyle as any)[k] !== (DEFAULT_STYLE as any)[k])
+              || (splitMarkers.length > 0 && Object.keys(styleByZone).length > 0)
             )}
           </button>
           <div className="pr-section-body">
@@ -2459,8 +2637,8 @@ export default function App() {
               <span className="pr-label">{t('font')}</span>
               <Select
                 className="pr-input-flex"
-                value={style.fontName}
-                onChange={v => setStyle(s => ({ ...s, fontName: v }))}
+                value={effectiveStyle.fontName}
+                onChange={v => setEffectiveStyle(s => ({ ...s, fontName: v }))}
                 options={FONT_OPTIONS.map(f => ({ value: f, label: f }))}
               />
             </div>
@@ -2468,8 +2646,8 @@ export default function App() {
               <span className="pr-label">{t('weight')}</span>
               <Select
                 className="pr-input-flex"
-                value={style.fontWeight}
-                onChange={v => setStyle(s => ({ ...s, fontWeight: v as SubtitleStyle['fontWeight'] }))}
+                value={effectiveStyle.fontWeight}
+                onChange={v => setEffectiveStyle(s => ({ ...s, fontWeight: v as SubtitleStyle['fontWeight'] }))}
                 options={[
                   { value: 'normal', label: t('weightNormal') },
                   { value: 'semibold', label: t('weightSemibold') },
@@ -2479,27 +2657,27 @@ export default function App() {
             </div>
             <div className="pr-row">
               <span className="pr-label">{t('size')}</span>
-              <input type="range" min={12} max={80} value={style.fontSize}
-                     onChange={e => setStyle(s => ({ ...s, fontSize: +e.target.value }))}
-                     style={rangePct(style.fontSize, 12, 80)}
+              <input type="range" min={12} max={80} value={effectiveStyle.fontSize}
+                     onChange={e => setEffectiveStyle(s => ({ ...s, fontSize: +e.target.value }))}
+                     style={rangePct(effectiveStyle.fontSize, 12, 80)}
                      className="pr-range pr-range-flex" />
-              <span className="pr-value">{style.fontSize}px</span>
+              <span className="pr-value">{effectiveStyle.fontSize}px</span>
             </div>
             <div className="pr-row">
               <span className="pr-label">{t('vertical')}</span>
-              <input type="range" min={0} max={100} value={style.marginVPct}
-                     onChange={e => setStyle(s => ({ ...s, marginVPct: +e.target.value }))}
-                     style={rangePct(style.marginVPct, 0, 100)}
+              <input type="range" min={0} max={100} value={effectiveStyle.marginVPct}
+                     onChange={e => setEffectiveStyle(s => ({ ...s, marginVPct: +e.target.value }))}
+                     style={rangePct(effectiveStyle.marginVPct, 0, 100)}
                      className="pr-range pr-range-flex" />
-              <span className="pr-value">{style.marginVPct}%</span>
+              <span className="pr-value">{effectiveStyle.marginVPct}%</span>
             </div>
             <div className="pr-row">
               <span className="pr-label">{t('horizontal')}</span>
-              <input type="range" min={-50} max={50} value={style.marginHPct}
-                     onChange={e => setStyle(s => ({ ...s, marginHPct: +e.target.value }))}
-                     style={rangePct(style.marginHPct, -50, 50)}
+              <input type="range" min={-50} max={50} value={effectiveStyle.marginHPct}
+                     onChange={e => setEffectiveStyle(s => ({ ...s, marginHPct: +e.target.value }))}
+                     style={rangePct(effectiveStyle.marginHPct, -50, 50)}
                      className="pr-range pr-range-flex" />
-              <span className="pr-value">{style.marginHPct > 0 ? '+' : ''}{style.marginHPct}%</span>
+              <span className="pr-value">{effectiveStyle.marginHPct > 0 ? '+' : ''}{effectiveStyle.marginHPct}%</span>
             </div>
             <div className="pr-row pr-crop-px-row">
               <span className="pr-label">{t('cropPixels')}</span>
@@ -2508,12 +2686,12 @@ export default function App() {
                   <span className="pr-crop-px-key">{t('cropX')}</span>
                   <input
                     type="number" step={1}
-                    value={videoW ? Math.round(style.marginHPct / 100 * videoW) : 0}
-                    disabled={!videoPath || !videoW || isBusy}
+                    value={videoW ? Math.round(effectiveStyle.marginHPct / 100 * videoW) : 0}
+                    disabled={!videoPath || !videoW || isEditBusy}
                     onChange={(e) => {
                       if (!videoW) return;
                       const px = Math.max(-videoW / 2, Math.min(videoW / 2, +e.target.value || 0));
-                      setStyle(s => ({ ...s, marginHPct: +(px / videoW * 100).toFixed(2) }));
+                      setEffectiveStyle(s => ({ ...s, marginHPct: +(px / videoW * 100).toFixed(2) }));
                     }}
                     className="pr-input pr-crop-px-input"
                   />
@@ -2522,12 +2700,12 @@ export default function App() {
                   <span className="pr-crop-px-key">{t('cropY')}</span>
                   <input
                     type="number" min={0} step={1}
-                    value={videoH ? Math.round(style.marginVPct / 100 * videoH) : 0}
-                    disabled={!videoPath || !videoH || isBusy}
+                    value={videoH ? Math.round(effectiveStyle.marginVPct / 100 * videoH) : 0}
+                    disabled={!videoPath || !videoH || isEditBusy}
                     onChange={(e) => {
                       if (!videoH) return;
                       const px = Math.max(0, Math.min(videoH, +e.target.value || 0));
-                      setStyle(s => ({ ...s, marginVPct: +(px / videoH * 100).toFixed(2) }));
+                      setEffectiveStyle(s => ({ ...s, marginVPct: +(px / videoH * 100).toFixed(2) }));
                     }}
                     className="pr-input pr-crop-px-input"
                   />
@@ -2541,7 +2719,7 @@ export default function App() {
                   type="button"
                   className="pr-chip"
                   title="Center horizontally"
-                  onClick={() => setStyle(s => ({ ...s, marginHPct: 0 }))}
+                  onClick={() => setEffectiveStyle(s => ({ ...s, marginHPct: 0 }))}
                 >
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="3" x2="12" y2="21"/><polyline points="6 9 3 12 6 15"/><polyline points="18 9 21 12 18 15"/></svg>
                 </button>
@@ -2549,7 +2727,7 @@ export default function App() {
                   type="button"
                   className="pr-chip"
                   title="Center vertically"
-                  onClick={() => setStyle(s => ({ ...s, marginVPct: 50 }))}
+                  onClick={() => setEffectiveStyle(s => ({ ...s, marginVPct: 50 }))}
                 >
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="3" y1="12" x2="21" y2="12"/><polyline points="9 6 12 3 15 6"/><polyline points="9 18 12 21 15 18"/></svg>
                 </button>
@@ -2557,7 +2735,7 @@ export default function App() {
                   type="button"
                   className="pr-chip"
                   title="Center both"
-                  onClick={() => setStyle(s => ({ ...s, marginHPct: 0, marginVPct: 50 }))}
+                  onClick={() => setEffectiveStyle(s => ({ ...s, marginHPct: 0, marginVPct: 50 }))}
                 >
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="3"/><line x1="12" y1="3" x2="12" y2="7"/><line x1="12" y1="17" x2="12" y2="21"/><line x1="3" y1="12" x2="7" y2="12"/><line x1="17" y1="12" x2="21" y2="12"/></svg>
                 </button>
@@ -2565,24 +2743,24 @@ export default function App() {
             </div>
             <div className="pr-row">
               <span className="pr-label">{t('color')}</span>
-              <ColorPicker value={style.color}
-                           onChange={v => setStyle(s => ({ ...s, color: v }))} />
+              <ColorPicker value={effectiveStyle.color}
+                           onChange={v => setEffectiveStyle(s => ({ ...s, color: v }))} />
               <label className="pr-check pr-label-mid" title={t('outline')}>
                 <input type="checkbox"
-                       checked={style.outlineEnabled}
-                       onChange={e => setStyle(s => ({ ...s, outlineEnabled: e.target.checked }))} />
+                       checked={effectiveStyle.outlineEnabled}
+                       onChange={e => setEffectiveStyle(s => ({ ...s, outlineEnabled: e.target.checked }))} />
                 <span>{t('outline')}</span>
               </label>
-              <ColorPicker value={style.outline}
-                           disabled={!style.outlineEnabled}
-                           onChange={v => setStyle(s => ({ ...s, outline: v }))} />
+              <ColorPicker value={effectiveStyle.outline}
+                           disabled={!effectiveStyle.outlineEnabled}
+                           onChange={v => setEffectiveStyle(s => ({ ...s, outline: v }))} />
             </div>
             <div className="pr-row">
               <span className="pr-label">{t('textCase')}</span>
               <Select
                 className="pr-input-flex"
-                value={style.textCase}
-                onChange={v => setStyle(s => ({ ...s, textCase: v as any }))}
+                value={effectiveStyle.textCase}
+                onChange={v => setEffectiveStyle(s => ({ ...s, textCase: v as any }))}
                 options={[
                   { value: 'asis', label: t('caseAsIs') },
                   { value: 'upper', label: t('caseUpper') },
@@ -2592,8 +2770,8 @@ export default function App() {
             </div>
             <div className="pr-row">
               <span className="pr-label">{t('maxPerLine')}</span>
-              <input type="number" min={1} max={12} value={style.maxWords}
-                     onChange={e => setStyle(s => ({ ...s, maxWords: +e.target.value }))}
+              <input type="number" min={1} max={12} value={effectiveStyle.maxWords}
+                     onChange={e => setEffectiveStyle(s => ({ ...s, maxWords: +e.target.value }))}
                      className="pr-input pr-input-num" />
             </div>
           </div>
@@ -2604,7 +2782,14 @@ export default function App() {
             <div className="pr-progress">
               <div className="pr-progress-bar" style={{ width: `${proc.pct}%` }} />
             </div>
-            <pre className="pr-log">{proc.log}</pre>
+            <pre
+              ref={logRef}
+              className="pr-log"
+              onScroll={e => {
+                const el = e.currentTarget;
+                logStickRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 4;
+              }}
+            >{proc.log}</pre>
           </div>
         )}
         {proc.phase === 'exported' && (
@@ -2626,17 +2811,27 @@ export default function App() {
               </span>
             )}
           </div>
-          <button
-            onClick={exportNow}
-            disabled={!videoPath || isBusy}
-            className={'pr-export-btn' + (proc.phase === 'exported' ? ' is-done' : '')}
-          >
-            {proc.phase === 'exporting'
-              ? `${t('exporting').toUpperCase()} ${proc.pct.toFixed(0)}%`
-              : proc.phase === 'exported'
+          {proc.phase === 'exporting' ? (
+            <button
+              onClick={cancelExportNow}
+              disabled={cancellingExport}
+              className="pr-export-btn pr-export-btn-cancel"
+            >
+              {cancellingExport
+                ? `${t('exportCancelled').toUpperCase()}`
+                : `${t('cancelExport').toUpperCase()} · ${proc.pct.toFixed(0)}%`}
+            </button>
+          ) : (
+            <button
+              onClick={exportNow}
+              disabled={!videoPath || isBusy}
+              className={'pr-export-btn' + (proc.phase === 'exported' ? ' is-done' : '')}
+            >
+              {proc.phase === 'exported'
                 ? `✓ ${t('exportDone').toUpperCase()}`
                 : t('exportNow').toUpperCase()}
-          </button>
+            </button>
+          )}
         </div>
       </aside>
       </div>

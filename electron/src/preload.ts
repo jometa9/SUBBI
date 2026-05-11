@@ -11,6 +11,7 @@ contextBridge.exposeInMainWorld('subbi', {
   detectSilences: (opts: any) => ipcRenderer.invoke('subbi:detectSilences', opts),
   cutSilences: (opts: any) => ipcRenderer.invoke('subbi:cutSilences', opts),
   exportVideo: (opts: any) => ipcRenderer.invoke('subbi:exportVideo', opts),
+  cancelExport: () => ipcRenderer.invoke('subbi:cancelExport'),
   extractPeaks: (opts: any) => ipcRenderer.invoke('subbi:extractPeaks', opts),
   writeSrt: (opts: any) => ipcRenderer.invoke('subbi:writeSrt', opts),
   onProgress: (cb: (evt: any) => void) => {

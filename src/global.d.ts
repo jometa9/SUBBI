@@ -49,7 +49,10 @@ interface SubbiAPI {
     volumeDb?: number;
     noiseGateDb?: number | null;
     outputPath?: string;
+    videoWidth?: number;
+    videoHeight?: number;
   }): Promise<string>;
+  cancelExport(): Promise<boolean>;
   extractPeaks(opts: { videoPath: string; targetBins?: number }):
     Promise<{ peaks: number[]; duration: number; sampleRate: number }>;
   writeSrt(opts: { srtPath: string; content: string }): Promise<string>;
