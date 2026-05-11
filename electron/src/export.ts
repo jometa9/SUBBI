@@ -252,8 +252,17 @@ export async function exportVideo(
   }
 
   const args: string[] = ['-y', '-hide_banner', '-stats', '-i', opts.videoPath];
+  let filterScriptPath: string | null = null;
   if (filterParts.length > 0) {
-    args.push('-filter_complex', filterParts.join(';'));
+    const filterGraph = filterParts.join(';');
+    if (filterGraph.length > 6000) {
+      filterScriptPath = path.join(os.tmpdir(), 'subbi', `${randomUUID()}.filter.txt`);
+      fs.mkdirSync(path.dirname(filterScriptPath), { recursive: true });
+      fs.writeFileSync(filterScriptPath, filterGraph, 'utf8');
+      args.push('-/filter_complex', filterScriptPath);
+    } else {
+      args.push('-filter_complex', filterGraph);
+    }
   }
   args.push('-map', mapV, '-map', mapA);
   if (filterParts.length > 0) {
@@ -295,6 +304,9 @@ export async function exportVideo(
     child.on('close', (code) => {
       if (srtTransformed && srtTransformed !== opts.subtitles?.srtPath) {
         try { fs.unlinkSync(srtTransformed); } catch {}
+      }
+      if (filterScriptPath) {
+        try { fs.unlinkSync(filterScriptPath); } catch {}
       }
       if (code === 0) {
         onProgress(100, 'evt:export.done');
