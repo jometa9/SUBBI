@@ -135,6 +135,8 @@ const TRANSLATIONS: Record<UiLang, Record<string, string>> = {
     cropZoneRemove: 'Remove zone',
     cropZonesBadge: 'zones',
     cropActiveZone: 'Active zone {n}/{total}',
+    cropApply: 'Apply',
+    cropEdit: 'Edit',
     exportPartsHint: 'Export will produce one file per segment.',
     zoomTimeline: 'Zoom timeline',
     zoomReset: 'Reset zoom',
@@ -260,6 +262,8 @@ const TRANSLATIONS: Record<UiLang, Record<string, string>> = {
     cropZoneRemove: 'Quitar zona',
     cropZonesBadge: 'zonas',
     cropActiveZone: 'Zona activa {n}/{total}',
+    cropApply: 'Aplicar',
+    cropEdit: 'Editar',
     exportPartsHint: 'Se exportará un archivo por cada segmento.',
     zoomTimeline: 'Zoom de la timeline',
     zoomReset: 'Restablecer zoom',
@@ -1845,6 +1849,7 @@ export default function App() {
                   onChange={setEffectiveCrop}
                   onApply={() => setCropEditing(false)}
                   onUserResize={() => setAspectId('free')}
+                  applyLabel={t('cropApply')}
                 />
               )}
             </div>
@@ -2234,7 +2239,7 @@ export default function App() {
             </div>
             <div className="pr-row">
               <span className="pr-label">{t('cropZonesBadge')}</span>
-              <div className="pr-aspect-row" style={{ flex: 1 }}>
+              <div className="pr-aspect-row" style={{ flex: 1, flexDirection: 'column', alignItems: 'stretch' }}>
                 <button
                   type="button"
                   className="pr-chip"
@@ -2250,7 +2255,7 @@ export default function App() {
                   title={t('cropZoneRemove')}
                 >− {t('cropZoneRemove')}</button>
                 {cropMarkers.length > 0 && (
-                  <span className="pr-value" style={{ marginLeft: 'auto' }}>
+                  <span className="pr-value">
                     {t('cropActiveZone').replace('{n}', String(activeZoneIdx + 1)).replace('{total}', String(cropZones.length))}
                   </span>
                 )}
@@ -2267,7 +2272,7 @@ export default function App() {
                 onClick={() => setCropEditing(v => !v)}
                 disabled={!cropEnabled || isBusy}
                 className="pr-btn pr-btn-ghost">
-                {cropEditing ? 'Apply' : 'Edit'}
+                {cropEditing ? t('cropApply') : t('cropEdit')}
               </button>
               <button
                 onClick={() => { setCropEnabled(false); setCropEditing(false); }}

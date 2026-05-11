@@ -9,6 +9,7 @@ interface Props {
   onChange: (next: CropRect) => void;
   onApply?: () => void;
   onUserResize?: () => void;
+  applyLabel?: string;
 }
 
 type DragMode =
@@ -53,7 +54,7 @@ const HANDLE_STYLE: Record<Handle, React.CSSProperties> = {
   sw: { bottom: -5, left: -5, cursor: 'nesw-resize' },
 };
 
-export default function CropOverlay({ videoEl, crop, aspectRatio, onChange, onApply, onUserResize }: Props) {
+export default function CropOverlay({ videoEl, crop, aspectRatio, onChange, onApply, onUserResize, applyLabel = 'Apply' }: Props) {
   const overlayRef = useRef<HTMLDivElement>(null);
   const [, force] = useState(0);
   const dragRef = useRef<DragMode | null>(null);
@@ -204,8 +205,8 @@ export default function CropOverlay({ videoEl, crop, aspectRatio, onChange, onAp
           top: boxTop,
           width: boxW,
           height: boxH,
-          border: '1.5px solid #ffffff',
-          boxShadow: '0 0 0 1px rgba(0,0,0,0.6)',
+          border: '1.5px solid var(--c-accent)',
+          boxShadow: '0 0 0 1px var(--c-shadow-strong)',
           cursor: 'move',
           boxSizing: 'border-box',
           pointerEvents: 'auto',
@@ -230,15 +231,16 @@ export default function CropOverlay({ videoEl, crop, aspectRatio, onChange, onAp
               padding: '4px 10px',
               fontSize: 12,
               fontWeight: 600,
-              background: '#ffffff',
-              color: '#1a1a1a',
-              border: '1px solid #1a1a1a',
+              fontFamily: 'inherit',
+              background: 'var(--c-accent)',
+              color: 'var(--c-text-strong)',
+              border: '1px solid var(--c-accent-border)',
               borderRadius: 4,
               cursor: 'pointer',
               pointerEvents: 'auto',
-              boxShadow: '0 1px 3px rgba(0,0,0,0.4)',
+              boxShadow: '0 1px 3px var(--c-shadow-mid)',
             }}
-          >Apply</button>
+          >{applyLabel}</button>
         )}
         {HANDLES.map(h => (
           <div
@@ -247,8 +249,8 @@ export default function CropOverlay({ videoEl, crop, aspectRatio, onChange, onAp
             style={{
               position: 'absolute',
               width: 10, height: 10,
-              background: '#ffffff',
-              border: '1px solid #1a1a1a',
+              background: 'var(--c-accent)',
+              border: '1px solid var(--c-accent-border)',
               borderRadius: 2,
               ...HANDLE_STYLE[h],
             }}
