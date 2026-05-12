@@ -66,6 +66,15 @@ interface SubbiAPI {
     Promise<{ peaks: number[]; duration: number; sampleRate: number }>;
   writeSrt(opts: { srtPath: string; content: string }): Promise<string>;
   setTitleBarOverlay?(opts: { color: string; symbolColor: string }): Promise<boolean>;
+  getAppVersion(): Promise<string>;
+  checkForUpdates(): Promise<{
+    current: string;
+    latest: string;
+    hasUpdate: boolean;
+    releaseUrl: string;
+    error?: string;
+  }>;
+  openExternal(url: string): Promise<boolean>;
   onProgress(cb: (evt: SubbiProgressEvent) => void): () => void;
 }
 

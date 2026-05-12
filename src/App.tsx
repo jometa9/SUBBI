@@ -11,6 +11,7 @@ import Editor, {
   type ResolvedTheme,
 } from './Editor';
 import TabBar from './TabBar';
+import UpdateBanner from './UpdateBanner';
 
 const TABS_KEY = 'subbi:tabs:v1';
 const MAX_TABS = 3;
@@ -147,6 +148,13 @@ export default function App() {
 
   return (
     <div className="app-shell">
+      <UpdateBanner
+        labels={{
+          available: (v) => t('updateAvailable').replace('{v}', v),
+          download: t('updateDownload'),
+          dismiss: t('updateDismiss'),
+        }}
+      />
       <TabBar
         tabs={tabs}
         activeTabId={activeTabId}

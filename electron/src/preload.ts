@@ -18,6 +18,9 @@ contextBridge.exposeInMainWorld('subbi', {
   writeSrt: (opts: any) => ipcRenderer.invoke('subbi:writeSrt', opts),
   setTitleBarOverlay: (opts: { color: string; symbolColor: string }) =>
     ipcRenderer.invoke('subbi:setTitleBarOverlay', opts),
+  getAppVersion: () => ipcRenderer.invoke('subbi:getAppVersion'),
+  checkForUpdates: () => ipcRenderer.invoke('subbi:checkForUpdates'),
+  openExternal: (url: string) => ipcRenderer.invoke('subbi:openExternal', url),
   onProgress: (cb: (evt: any) => void) => {
     const listener = (_e: any, evt: any) => cb(evt);
     ipcRenderer.on('subbi:progress', listener);

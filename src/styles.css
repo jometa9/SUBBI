@@ -278,6 +278,34 @@ body {
   height: 100vh;
   background: var(--c-bg-app);
 }
+.update-banner {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 12px;
+  background: var(--c-accent-tint);
+  border-bottom: 1px solid var(--c-accent-border);
+  color: var(--c-text-strong);
+  font-size: 13px;
+  flex: 0 0 auto;
+}
+.update-banner__text { flex: 1 1 auto; }
+.update-banner__btn {
+  background: transparent;
+  color: var(--c-text);
+  border: 1px solid var(--c-border-soft);
+  border-radius: 4px;
+  padding: 3px 10px;
+  font-size: 12px;
+  cursor: pointer;
+}
+.update-banner__btn:hover { background: var(--c-bg-hover); }
+.update-banner__btn--primary {
+  background: var(--c-accent);
+  color: #fff;
+  border-color: var(--c-accent-border);
+}
+.update-banner__btn--primary:hover { background: var(--c-accent-bold); }
 .app {
   display: flex;
   flex-direction: column;
@@ -795,6 +823,13 @@ select.pr-input {
   padding-top: 2px;
 }
 .pr-hint { font-size: 10px; color: var(--c-text-faint); font-style: italic; }
+.pr-hint-error { color: var(--c-danger, #d97a7a); font-style: normal; }
+.pr-model-dl {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 6px 0;
+}
 
 .pr-badge {
   font-size: 9px;

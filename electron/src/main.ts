@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, dialog, protocol } from 'electron';
+import { app, BrowserWindow, ipcMain, dialog, protocol, shell, net } from 'electron';
 import path from 'path';
 import fs from 'fs';
 import { transcribe, type TranscribeOptions } from './transcriber';
@@ -150,6 +150,68 @@ ipcMain.handle('subbi:cancelExport', async () => {
 ipcMain.handle('subbi:writeSrt', async (_e, opts: { srtPath: string; content: string }) => {
   fs.writeFileSync(opts.srtPath, opts.content, 'utf8');
   return opts.srtPath;
+});
+
+const UPDATE_REPO = 'jometa9/SUBBI';
+
+function parseSemver(v: string): [number, number, number] | null {
+  const m = /^v?(\d+)\.(\d+)\.(\d+)/.exec(v.trim());
+  if (!m) return null;
+  return [Number(m[1]), Number(m[2]), Number(m[3])];
+}
+
+function isNewer(latest: string, current: string): boolean {
+  const a = parseSemver(latest);
+  const b = parseSemver(current);
+  if (!a || !b) return false;
+  for (let i = 0; i < 3; i++) if (a[i] !== b[i]) return a[i] > b[i];
+  return false;
+}
+
+ipcMain.handle('subbi:getAppVersion', async () => app.getVersion());
+
+ipcMain.handle('subbi:checkForUpdates', async () => {
+  const current = app.getVersion();
+  try {
+    const body = await new Promise<string>((resolve, reject) => {
+      const req = net.request({
+        method: 'GET',
+        url: `https://api.github.com/repos/${UPDATE_REPO}/releases/latest`,
+        redirect: 'follow',
+      });
+      req.setHeader('Accept', 'application/vnd.github+json');
+      req.setHeader('User-Agent', 'Subbi-UpdateCheck');
+      const chunks: Buffer[] = [];
+      req.on('response', (res) => {
+        if (res.statusCode && res.statusCode >= 400) {
+          reject(new Error(`HTTP ${res.statusCode}`));
+          return;
+        }
+        res.on('data', (c) => chunks.push(c));
+        res.on('end', () => resolve(Buffer.concat(chunks).toString('utf8')));
+        res.on('error', reject);
+      });
+      req.on('error', reject);
+      req.end();
+    });
+    const data = JSON.parse(body) as { tag_name?: string; html_url?: string };
+    const latest = (data.tag_name || '').replace(/^v/, '');
+    const releaseUrl = data.html_url || `https://github.com/${UPDATE_REPO}/releases/latest`;
+    return {
+      current,
+      latest,
+      hasUpdate: latest ? isNewer(latest, current) : false,
+      releaseUrl,
+    };
+  } catch (err: any) {
+    return { current, latest: '', hasUpdate: false, releaseUrl: `https://github.com/${UPDATE_REPO}/releases/latest`, error: String(err?.message || err) };
+  }
+});
+
+ipcMain.handle('subbi:openExternal', async (_e, url: string) => {
+  if (typeof url !== 'string' || !/^https?:\/\//.test(url)) return false;
+  await shell.openExternal(url);
+  return true;
 });
 
 ipcMain.handle('subbi:setTitleBarOverlay', async (_e, opts: { color: string; symbolColor: string }) => {

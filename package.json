@@ -6,7 +6,6 @@
   "private": true,
   "main": "electron/dist/main.js",
   "scripts": {
-    "postinstall": "node scripts/setup-models.js",
     "setup:models": "node scripts/setup-models.js",
     "dev": "concurrently -k -n vite,electron -c blue,magenta \"npm:dev:vite\" \"npm:dev:electron-wait\"",
     "dev:vite": "vite",
@@ -36,9 +35,17 @@
   "build": {
     "appId": "app.subbi.desktop",
     "productName": "Subbi",
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "jometa9",
+        "repo": "SUBBI"
+      }
+    ],
     "asar": true,
     "asarUnpack": [
       "resources/whisper/**/*",
+      "!resources/whisper/*.bin",
       "node_modules/ffmpeg-static/**/*"
     ],
     "files": [
@@ -51,7 +58,9 @@
         "from": "resources/whisper",
         "to": "whisper",
         "filter": [
-          "**/*"
+          "**/*",
+          "!*.bin",
+          "!*.bin.part"
         ]
       },
       {

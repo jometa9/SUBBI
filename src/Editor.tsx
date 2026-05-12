@@ -224,6 +224,9 @@ export const TRANSLATIONS: Record<UiLang, Record<string, string>> = {
     tabNew: 'New tab',
     tabClose: 'Close tab',
     tabMaxReached: 'Maximum {n} tabs',
+    updateAvailable: 'New version {v} available',
+    updateDownload: 'Download',
+    updateDismiss: 'Dismiss',
   },
   es: {
     openVideo: 'Abrir video',
@@ -390,6 +393,9 @@ export const TRANSLATIONS: Record<UiLang, Record<string, string>> = {
     tabNew: 'Nueva pestaña',
     tabClose: 'Cerrar pestaña',
     tabMaxReached: 'Máximo {n} pestañas',
+    updateAvailable: 'Nueva versión {v} disponible',
+    updateDownload: 'Descargar',
+    updateDismiss: 'Cerrar',
   },
 };
 
@@ -2833,7 +2839,7 @@ export default function Editor(props: EditorProps) {
             <div className="pr-row pr-row-end">
               <button
                 onClick={transcribe}
-                disabled={!videoPath || isBusy || (model === 'cloud' && !openaiApiKey.trim())}
+                disabled={!videoPath || isBusy || (model === 'cloud' && !openaiApiKey.trim()) || (model !== 'cloud' && modelStatus[modelToBackend(model).whisper].phase !== 'present')}
                 className="pr-btn"
               >
                 {proc.phase === 'transcribing' ? `${t('transcribing')}… ${proc.pct.toFixed(0)}%` : t('transcribe')}
