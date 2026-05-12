@@ -1,4 +1,4 @@
-import React, { useEffect, useImperativeHandle, useRef } from 'react';
+import React, { useEffect, useImperativeHandle, useRef, useState } from 'react';
 import WaveSurfer from 'wavesurfer.js';
 import RegionsPlugin, { type Region } from 'wavesurfer.js/dist/plugins/regions.js';
 
@@ -50,6 +50,7 @@ const SilenceTimeline = React.forwardRef<SilenceTimelineHandle, Props>(function 
   const regionsPluginRef = useRef<ReturnType<typeof RegionsPlugin.create> | null>(null);
   const regionMapRef = useRef<Map<string, Region>>(new Map());
   const seekingFromVideoRef = useRef(false);
+  const [pluginReadyTick, setPluginReadyTick] = useState(0);
 
   useImperativeHandle(ref, () => ({
     seek(timeSec) {
@@ -103,6 +104,8 @@ const SilenceTimeline = React.forwardRef<SilenceTimelineHandle, Props>(function 
         videoEl.currentTime = newTime;
       }
     });
+
+    setPluginReadyTick(t => t + 1);
 
     return () => {
       regionMapRef.current.clear();
@@ -160,7 +163,7 @@ const SilenceTimeline = React.forwardRef<SilenceTimelineHandle, Props>(function 
         regionMapRef.current.set(r.id, reg);
       }
     }
-  }, [regions]);
+  }, [regions, pluginReadyTick]);
 
   const showMarkers = duration > 0 && splitMarkers.length > 0;
 

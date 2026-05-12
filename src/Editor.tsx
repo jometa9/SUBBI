@@ -121,6 +121,18 @@ export const TRANSLATIONS: Record<UiLang, Record<string, string>> = {
     sectionSilence: 'Silence',
     sectionTranscription: 'Transcription',
     sectionSubtitleStyle: 'Subtitle style',
+    sectionTemplates: 'Templates',
+    templateSaveCurrent: 'Save current as template',
+    templateNamePlaceholder: 'Template name',
+    templateSaveBtn: 'Save',
+    templateCancelBtn: 'Cancel',
+    templateApply: 'Apply',
+    templateDelete: 'Delete',
+    templateEmpty: 'No templates yet. Save your current settings to reuse them on other videos.',
+    templateSavedToast: 'Template saved',
+    templateAppliedToast: 'Template applied',
+    templateConfirmDelete: 'Delete this template?',
+    templateNameRequired: 'Enter a name',
     weight: 'Weight',
     weightNormal: 'Regular',
     weightSemibold: 'Semibold',
@@ -150,6 +162,11 @@ export const TRANSLATIONS: Record<UiLang, Record<string, string>> = {
     cropEdit: 'Edit',
     cropFit: 'Fit',
     cropFill: 'Fill',
+    cropAlign: 'Align',
+    cropAlignLeft: 'Align left',
+    cropAlignRight: 'Align right',
+    cropAlignTop: 'Align top',
+    cropAlignBottom: 'Align bottom',
     cropBg: 'Background',
     cropBgBlack: 'Black',
     cropBgWhite: 'White',
@@ -290,6 +307,18 @@ export const TRANSLATIONS: Record<UiLang, Record<string, string>> = {
     sectionSilence: 'Silencios',
     sectionTranscription: 'Transcripción',
     sectionSubtitleStyle: 'Estilo del subtítulo',
+    sectionTemplates: 'Plantillas',
+    templateSaveCurrent: 'Guardar configuración actual como plantilla',
+    templateNamePlaceholder: 'Nombre de la plantilla',
+    templateSaveBtn: 'Guardar',
+    templateCancelBtn: 'Cancelar',
+    templateApply: 'Aplicar',
+    templateDelete: 'Eliminar',
+    templateEmpty: 'Aún no hay plantillas. Guardá tu configuración actual para reutilizarla en otros videos.',
+    templateSavedToast: 'Plantilla guardada',
+    templateAppliedToast: 'Plantilla aplicada',
+    templateConfirmDelete: '¿Eliminar esta plantilla?',
+    templateNameRequired: 'Ingresá un nombre',
     weight: 'Peso',
     weightNormal: 'Regular',
     weightSemibold: 'Semibold',
@@ -319,6 +348,11 @@ export const TRANSLATIONS: Record<UiLang, Record<string, string>> = {
     cropEdit: 'Editar',
     cropFit: 'Encajar',
     cropFill: 'Rellenar',
+    cropAlign: 'Alinear',
+    cropAlignLeft: 'Alinear a la izquierda',
+    cropAlignRight: 'Alinear a la derecha',
+    cropAlignTop: 'Alinear arriba',
+    cropAlignBottom: 'Alinear abajo',
     cropBg: 'Fondo',
     cropBgBlack: 'Negro',
     cropBgWhite: 'Blanco',
@@ -515,6 +549,7 @@ function pickRulerInterval(targetSec: number): number {
 
 const STORAGE_KEY = 'subbi:settings:v2';
 const PROJECT_PREFIX = 'subbi:proj:v1:';
+const TEMPLATES_KEY = 'subbi:templates:v1';
 export const LAST_VIDEO_KEY = 'subbi:lastVideoPath:v1';
 
 type TranscribeModel = 'fast' | 'medium' | 'cloud';
@@ -566,7 +601,7 @@ type ProjectState = {
 
 const VIDEO_EXTENSIONS = ['mp4', 'mov', 'mkv', 'webm', 'avi', 'm4v'];
 
-function isVideoPath(filePath: string): boolean {
+export function isVideoPath(filePath: string): boolean {
   const dot = filePath.lastIndexOf('.');
   if (dot < 0) return false;
   return VIDEO_EXTENSIONS.includes(filePath.slice(dot + 1).toLowerCase());
@@ -587,6 +622,45 @@ function loadProject(videoPath: string): ProjectState | null {
 
 function saveProject(videoPath: string, state: ProjectState) {
   try { localStorage.setItem(projectKey(videoPath), JSON.stringify(state)); } catch {}
+}
+
+export type VideoTemplate = {
+  id: string;
+  name: string;
+  createdAt: number;
+  thresholdDb: number;
+  autoThreshold: boolean;
+  minSilenceDur: number;
+  cropEnabled: boolean;
+  crop: CropRect;
+  cropBgColor: 'black' | 'white';
+  aspectId: string;
+  cropByZone: Record<string, CropRect>;
+  style: SubtitleStyle;
+  styleByZone: Record<string, SubtitleStyle>;
+  styleApplyToAll: boolean;
+  volumeDb: number;
+  noiseGateDb: number;
+  noiseGateEnabled: boolean;
+  language: string;
+  model: TranscribeModel;
+};
+
+function loadTemplates(): VideoTemplate[] {
+  try {
+    const raw = localStorage.getItem(TEMPLATES_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed.filter(t => t && typeof t === 'object' && t.id && t.name) : [];
+  } catch { return []; }
+}
+
+function saveTemplates(list: VideoTemplate[]) {
+  try { localStorage.setItem(TEMPLATES_KEY, JSON.stringify(list)); } catch {}
+}
+
+function newTemplateId(): string {
+  return 'tpl-' + Math.random().toString(36).slice(2, 10) + Date.now().toString(36);
 }
 
 function autosaveStats(currentVideoPath: string | null): { total: number; others: number; count: number; othersCount: number } {
@@ -680,10 +754,11 @@ export type EditorProps = {
   resolvedTheme: ResolvedTheme;
   onThemePrefChange: (pref: ThemePref) => void;
   onVideoPathChange: (path: string | null) => void;
+  onDropPaths?: (paths: string[]) => boolean;
 };
 
 export default function Editor(props: EditorProps) {
-  const { initialVideoPath, uiLang, onUiLangChange, themePref, resolvedTheme, onThemePrefChange, onVideoPathChange } = props;
+  const { initialVideoPath, uiLang, onUiLangChange, themePref, resolvedTheme, onThemePrefChange, onVideoPathChange, onDropPaths } = props;
   const initial = useMemo(loadSettings, []);
   const [videoPath, setVideoPath] = useState<string | null>(null);
   const [videoUrl, setVideoUrl] = useState<string | null>(null);
@@ -1004,9 +1079,73 @@ export default function Editor(props: EditorProps) {
   }
 
   const [openSections, setOpenSections] = useState<Record<string, boolean>>({
-    crop: true, silence: true, audio: true, transcription: true, style: true,
+    crop: true, silence: true, audio: true, transcription: true, style: true, templates: true,
     ...(initial.openSections ?? {}),
   });
+
+  const [templates, setTemplates] = useState<VideoTemplate[]>(() => loadTemplates());
+  const [showSaveTemplate, setShowSaveTemplate] = useState<boolean>(false);
+  const [newTemplateName, setNewTemplateName] = useState<string>('');
+  const [confirmDeleteTemplate, setConfirmDeleteTemplate] = useState<string | null>(null);
+  const [templateToast, setTemplateToast] = useState<string | null>(null);
+  const templateToastTimerRef = useRef<number | null>(null);
+  const [pendingTemplateRun, setPendingTemplateRun] = useState<boolean>(false);
+
+  function flashTemplateToast(msg: string) {
+    if (templateToastTimerRef.current) window.clearTimeout(templateToastTimerRef.current);
+    setTemplateToast(msg);
+    templateToastTimerRef.current = window.setTimeout(() => setTemplateToast(null), 2200);
+  }
+
+  function persistTemplates(next: VideoTemplate[]) {
+    setTemplates(next);
+    saveTemplates(next);
+  }
+
+  function saveCurrentAsTemplate() {
+    const name = newTemplateName.trim();
+    if (!name) { flashTemplateToast(t('templateNameRequired')); return; }
+    const tpl: VideoTemplate = {
+      id: newTemplateId(),
+      name,
+      createdAt: Date.now(),
+      thresholdDb, autoThreshold, minSilenceDur,
+      cropEnabled, crop, cropBgColor, aspectId, cropByZone,
+      style, styleByZone, styleApplyToAll,
+      volumeDb, noiseGateDb, noiseGateEnabled,
+      language, model,
+    };
+    persistTemplates([tpl, ...templates]);
+    setNewTemplateName('');
+    setShowSaveTemplate(false);
+    flashTemplateToast(t('templateSavedToast'));
+  }
+
+  function deleteTemplate(id: string) {
+    persistTemplates(templates.filter(x => x.id !== id));
+    setConfirmDeleteTemplate(null);
+  }
+
+  function applyTemplate(tpl: VideoTemplate) {
+    setThresholdDb(tpl.thresholdDb);
+    setAutoThreshold(tpl.autoThreshold);
+    setMinSilenceDur(tpl.minSilenceDur);
+    setCropEnabled(tpl.cropEnabled);
+    setCrop(tpl.crop);
+    setCropBgColor(tpl.cropBgColor);
+    setAspectId(tpl.aspectId);
+    setCropByZone(tpl.cropByZone ?? {});
+    setStyle(tpl.style);
+    setStyleByZone(tpl.styleByZone ?? {});
+    setStyleApplyToAll(tpl.styleApplyToAll);
+    setVolumeDb(tpl.volumeDb);
+    setNoiseGateDb(tpl.noiseGateDb);
+    setNoiseGateEnabled(tpl.noiseGateEnabled);
+    setLanguage(tpl.language);
+    setModel(tpl.model);
+    flashTemplateToast(t('templateAppliedToast'));
+    if (videoPath) setPendingTemplateRun(true);
+  }
   const toggleSection = (id: string) =>
     setOpenSections(s => ({ ...s, [id]: !s[id] }));
 
@@ -1560,12 +1699,18 @@ export default function Editor(props: EditorProps) {
   function onDrop(e: React.DragEvent) {
     e.preventDefault();
     setOver(false);
-    const f = e.dataTransfer.files[0];
-    if (!f) return;
-    const p = window.subbi.getPathForFile?.(f) || (f as any).path || '';
-    if (!p) { setProc({ phase: 'error', message: t('couldNotReadPath') }); return; }
-    if (!isVideoPath(p)) { setProc({ phase: 'error', message: t('notAVideo') }); return; }
-    loadVideo(p);
+    const files = Array.from(e.dataTransfer.files || []);
+    if (files.length === 0) return;
+    const paths: string[] = [];
+    for (const f of files) {
+      const p = window.subbi.getPathForFile?.(f) || (f as any).path || '';
+      if (p) paths.push(p);
+    }
+    if (paths.length === 0) { setProc({ phase: 'error', message: t('couldNotReadPath') }); return; }
+    const videoPaths = paths.filter(isVideoPath);
+    if (videoPaths.length === 0) { setProc({ phase: 'error', message: t('notAVideo') }); return; }
+    if (onDropPaths && onDropPaths(videoPaths)) return;
+    loadVideo(videoPaths[0]);
   }
 
   async function pickFile() {
@@ -1597,6 +1742,16 @@ export default function Editor(props: EditorProps) {
       setProc({ phase: 'error', message: tEvt(String(err?.message || err)) || String(err?.message || err) });
     }
   }
+
+  useEffect(() => {
+    if (!pendingTemplateRun) return;
+    if (!videoPath) { setPendingTemplateRun(false); return; }
+    setPendingTemplateRun(false);
+    (async () => {
+      try { await detectSilencesNow(); } catch {}
+      try { await transcribe(); } catch {}
+    })();
+  }, [pendingTemplateRun, videoPath]);
 
   const enabledCount = silenceRegions.filter(r => r.enabled).length;
   const totalCutSec = silenceRegions.filter(r => r.enabled).reduce((s, r) => s + (r.end - r.start), 0);
@@ -1813,6 +1968,19 @@ export default function Editor(props: EditorProps) {
       const w = (videoH * aspectRatio) / videoW;
       setEffectiveCrop({ x: (1 - w) / 2, y: 0, width: w, height: h });
     }
+  }
+
+  function applyCropAlign(side: 'left' | 'right' | 'top' | 'bottom') {
+    setEffectiveCrop(prev => {
+      const w = prev.width;
+      const h = prev.height;
+      switch (side) {
+        case 'left':   return { ...prev, x: 0 };
+        case 'right':  return { ...prev, x: Math.max(0, 1 - w) };
+        case 'top':    return { ...prev, y: 0 };
+        case 'bottom': return { ...prev, y: Math.max(0, 1 - h) };
+      }
+    });
   }
 
   function applyCropFill() {
@@ -2151,6 +2319,11 @@ export default function Editor(props: EditorProps) {
                   fillLabel={t('cropFill')}
                   onFit={aspectRatio != null ? applyCropFit : undefined}
                   onFill={aspectRatio != null ? applyCropFill : undefined}
+                  onAlign={applyCropAlign}
+                  alignLeftLabel={t('cropAlignLeft')}
+                  alignRightLabel={t('cropAlignRight')}
+                  alignTopLabel={t('cropAlignTop')}
+                  alignBottomLabel={t('cropAlignBottom')}
                   bgColor={cropBgColor}
                 />
               )}
@@ -2433,6 +2606,84 @@ export default function Editor(props: EditorProps) {
 
       <aside className="pr-sidebar">
 
+        <div className={'pr-section' + (openSections.templates ? ' is-open' : ' is-closed')}>
+          <button className="pr-section-head" onClick={() => toggleSection('templates')} type="button">
+            <span className="pr-section-chev" />
+            <span className="pr-section-title">{t('sectionTemplates')}</span>
+          </button>
+          <div className="pr-section-body">
+            {showSaveTemplate ? (
+              <div className="pr-row pr-template-save-row">
+                <input
+                  type="text"
+                  autoFocus
+                  className="pr-input pr-input-flex"
+                  placeholder={t('templateNamePlaceholder')}
+                  value={newTemplateName}
+                  onChange={e => setNewTemplateName(e.target.value)}
+                  onKeyDown={e => {
+                    if (e.key === 'Enter') { e.preventDefault(); saveCurrentAsTemplate(); }
+                    else if (e.key === 'Escape') { e.preventDefault(); setShowSaveTemplate(false); setNewTemplateName(''); }
+                  }}
+                />
+                <button type="button" className="pr-btn pr-btn-primary" onClick={saveCurrentAsTemplate}>
+                  {t('templateSaveBtn')}
+                </button>
+                <button type="button" className="pr-btn" onClick={() => { setShowSaveTemplate(false); setNewTemplateName(''); }}>
+                  {t('templateCancelBtn')}
+                </button>
+              </div>
+            ) : (
+              <div className="pr-row">
+                <button
+                  type="button"
+                  className="pr-btn pr-template-save-btn"
+                  onClick={() => { setShowSaveTemplate(true); setNewTemplateName(''); }}
+                >
+                  + {t('templateSaveCurrent')}
+                </button>
+              </div>
+            )}
+            {templates.length === 0 ? (
+              <div className="pr-row pr-template-empty">{t('templateEmpty')}</div>
+            ) : (
+              <div className="pr-template-list">
+                {templates.map(tpl => {
+                  const armed = confirmDeleteTemplate === tpl.id;
+                  return (
+                    <div key={tpl.id} className="pr-template-item">
+                      <span className="pr-template-name" title={tpl.name}>{tpl.name}</span>
+                      <button
+                        type="button"
+                        className="pr-btn pr-btn-sm"
+                        onClick={() => applyTemplate(tpl)}
+                        disabled={pendingTemplateRun}
+                      >
+                        {t('templateApply')}
+                      </button>
+                      <button
+                        type="button"
+                        className={'pr-btn pr-btn-sm pr-btn-danger' + (armed ? ' is-confirming' : '')}
+                        title={armed ? t('templateConfirmDelete') : t('templateDelete')}
+                        onClick={() => {
+                          if (armed) deleteTemplate(tpl.id);
+                          else setConfirmDeleteTemplate(tpl.id);
+                        }}
+                        onBlur={() => setConfirmDeleteTemplate(null)}
+                      >
+                        {armed ? '?' : '×'}
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+            {templateToast && (
+              <div className="pr-row pr-template-toast">{templateToast}</div>
+            )}
+          </div>
+        </div>
+
         <div className={'pr-section' + (openSections.crop ? ' is-open' : ' is-closed')}>
           <button className="pr-section-head" onClick={() => toggleSection('crop')} type="button">
             <span className="pr-section-chev" />
@@ -2501,6 +2752,51 @@ export default function Editor(props: EditorProps) {
                 </div>
               </div>
             )}
+            <div className="pr-row">
+              <span className="pr-label">{t('cropAlign')}</span>
+              <div className="pr-aspect-row">
+                <button
+                  type="button"
+                  disabled={!videoPath || !videoW || isEditBusy}
+                  onClick={() => { setCropEnabled(true); applyCropAlign('left'); }}
+                  className="pr-chip"
+                  title={t('cropAlignLeft')}
+                  aria-label={t('cropAlignLeft')}
+                >
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><line x1="4" y1="3" x2="4" y2="21"/><rect x="7" y="7" width="11" height="10"/></svg>
+                </button>
+                <button
+                  type="button"
+                  disabled={!videoPath || !videoW || isEditBusy}
+                  onClick={() => { setCropEnabled(true); applyCropAlign('right'); }}
+                  className="pr-chip"
+                  title={t('cropAlignRight')}
+                  aria-label={t('cropAlignRight')}
+                >
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><line x1="20" y1="3" x2="20" y2="21"/><rect x="6" y="7" width="11" height="10"/></svg>
+                </button>
+                <button
+                  type="button"
+                  disabled={!videoPath || !videoH || isEditBusy}
+                  onClick={() => { setCropEnabled(true); applyCropAlign('top'); }}
+                  className="pr-chip"
+                  title={t('cropAlignTop')}
+                  aria-label={t('cropAlignTop')}
+                >
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><line x1="3" y1="4" x2="21" y2="4"/><rect x="7" y="7" width="10" height="11"/></svg>
+                </button>
+                <button
+                  type="button"
+                  disabled={!videoPath || !videoH || isEditBusy}
+                  onClick={() => { setCropEnabled(true); applyCropAlign('bottom'); }}
+                  className="pr-chip"
+                  title={t('cropAlignBottom')}
+                  aria-label={t('cropAlignBottom')}
+                >
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><line x1="3" y1="20" x2="21" y2="20"/><rect x="7" y="6" width="10" height="11"/></svg>
+                </button>
+              </div>
+            </div>
             <div className="pr-row pr-crop-px-row">
               <span className="pr-label">{t('cropPixels')}</span>
               <div className="pr-crop-px-grid">

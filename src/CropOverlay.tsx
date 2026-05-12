@@ -2,6 +2,8 @@ import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
 
 export type CropRect = { x: number; y: number; width: number; height: number };
 
+export type CropAlignSide = 'left' | 'right' | 'top' | 'bottom';
+
 interface Props {
   videoEl: HTMLVideoElement | null;
   crop: CropRect;
@@ -14,6 +16,11 @@ interface Props {
   fillLabel?: string;
   onFit?: () => void;
   onFill?: () => void;
+  onAlign?: (side: CropAlignSide) => void;
+  alignLeftLabel?: string;
+  alignRightLabel?: string;
+  alignTopLabel?: string;
+  alignBottomLabel?: string;
   bgColor?: 'black' | 'white';
 }
 
@@ -48,13 +55,16 @@ const HANDLES: Handle[] = ['n', 's', 'e', 'w', 'ne', 'nw', 'se', 'sw'];
 
 function overlayBtnStyle(kind: 'primary' | 'secondary'): React.CSSProperties {
   return {
+    display: 'inline-flex',
+    alignItems: 'center',
+    justifyContent: 'center',
     padding: '4px 10px',
     fontSize: 12,
     fontWeight: 600,
     fontFamily: 'inherit',
-    background: kind === 'primary' ? 'var(--c-accent)' : 'var(--c-surface-strong, rgba(20,20,20,0.85))',
-    color: kind === 'primary' ? 'var(--c-text-strong)' : 'var(--c-text-strong, #fff)',
-    border: '1px solid ' + (kind === 'primary' ? 'var(--c-accent-border)' : 'var(--c-border, rgba(255,255,255,0.25))'),
+    background: kind === 'primary' ? 'var(--c-accent)' : 'var(--c-bg-chip)',
+    color: kind === 'primary' ? '#fff' : 'var(--c-text-secondary)',
+    border: 'none',
     borderRadius: 4,
     cursor: 'pointer',
     boxShadow: '0 1px 3px var(--c-shadow-mid)',
@@ -72,7 +82,7 @@ const HANDLE_STYLE: Record<Handle, React.CSSProperties> = {
   sw: { bottom: -5, left: -5, cursor: 'nesw-resize' },
 };
 
-export default function CropOverlay({ videoEl, crop, aspectRatio, onChange, onApply, onUserResize, applyLabel = 'Apply', fitLabel = 'Fit', fillLabel = 'Fill', onFit, onFill, bgColor = 'black' }: Props) {
+export default function CropOverlay({ videoEl, crop, aspectRatio, onChange, onApply, onUserResize, applyLabel = 'Apply', fitLabel = 'Fit', fillLabel = 'Fill', onFit, onFill, onAlign, alignLeftLabel = 'Align left', alignRightLabel = 'Align right', alignTopLabel = 'Align top', alignBottomLabel = 'Align bottom', bgColor = 'black' }: Props) {
   const overlayRef = useRef<HTMLDivElement>(null);
   const [, force] = useState(0);
   const dragRef = useRef<DragMode | null>(null);
@@ -256,6 +266,46 @@ export default function CropOverlay({ videoEl, crop, aspectRatio, onChange, onAp
           }}
           onPointerDown={(e) => e.stopPropagation()}
         >
+          {onAlign && (
+            <>
+              <button
+                type="button"
+                title={alignLeftLabel}
+                aria-label={alignLeftLabel}
+                onClick={(e) => { e.stopPropagation(); onAlign('left'); }}
+                style={overlayBtnStyle('secondary')}
+              >
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><line x1="4" y1="3" x2="4" y2="21"/><rect x="7" y="7" width="11" height="10"/></svg>
+              </button>
+              <button
+                type="button"
+                title={alignRightLabel}
+                aria-label={alignRightLabel}
+                onClick={(e) => { e.stopPropagation(); onAlign('right'); }}
+                style={overlayBtnStyle('secondary')}
+              >
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><line x1="20" y1="3" x2="20" y2="21"/><rect x="6" y="7" width="11" height="10"/></svg>
+              </button>
+              <button
+                type="button"
+                title={alignTopLabel}
+                aria-label={alignTopLabel}
+                onClick={(e) => { e.stopPropagation(); onAlign('top'); }}
+                style={overlayBtnStyle('secondary')}
+              >
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><line x1="3" y1="4" x2="21" y2="4"/><rect x="7" y="7" width="10" height="11"/></svg>
+              </button>
+              <button
+                type="button"
+                title={alignBottomLabel}
+                aria-label={alignBottomLabel}
+                onClick={(e) => { e.stopPropagation(); onAlign('bottom'); }}
+                style={overlayBtnStyle('secondary')}
+              >
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><line x1="3" y1="20" x2="21" y2="20"/><rect x="7" y="6" width="10" height="11"/></svg>
+              </button>
+            </>
+          )}
           {onFit && (
             <button
               type="button"

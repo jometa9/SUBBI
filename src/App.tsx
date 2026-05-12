@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import Editor, {
   TRANSLATIONS,
   detectUiLang,
+  isVideoPath,
   loadSettings,
   resolveTheme,
   saveSettings,
@@ -14,7 +15,7 @@ import TabBar from './TabBar';
 import UpdateBanner from './UpdateBanner';
 
 const TABS_KEY = 'subbi:tabs:v1';
-const MAX_TABS = 3;
+const MAX_TABS = 10;
 
 export type Tab = { id: string; videoPath: string | null };
 type TabsState = { tabs: Tab[]; activeTabId: string };
@@ -141,6 +142,37 @@ export default function App() {
     }
   }
 
+  function handleDropPaths(paths: string[]): boolean {
+    const videoPaths = paths.filter(isVideoPath);
+    if (videoPaths.length === 0) return false;
+
+    const current = tabs.find(t => t.id === activeTabId) ?? tabs[0];
+    const currentEmpty = !current.videoPath;
+
+    let nextTabs = [...tabs];
+    let firstAssignedId: string | null = null;
+    let remaining = videoPaths.slice();
+
+    if (currentEmpty && remaining.length > 0) {
+      const [first, ...rest] = remaining;
+      const replacement: Tab = { id: newTabId(), videoPath: first };
+      nextTabs = nextTabs.map(t => (t.id === current.id ? replacement : t));
+      firstAssignedId = replacement.id;
+      remaining = rest;
+    }
+
+    for (const p of remaining) {
+      if (nextTabs.length >= MAX_TABS) break;
+      const tab: Tab = { id: newTabId(), videoPath: p };
+      nextTabs.push(tab);
+      if (firstAssignedId === null) firstAssignedId = tab.id;
+    }
+
+    setTabs(nextTabs);
+    if (firstAssignedId) setActiveTabId(firstAssignedId);
+    return true;
+  }
+
   function handleSelectTab(id: string) {
     if (id === activeTabId) return;
     setActiveTabId(id);
@@ -178,6 +210,7 @@ export default function App() {
         resolvedTheme={resolvedTheme}
         onThemePrefChange={setThemePref}
         onVideoPathChange={handleVideoPathChange}
+        onDropPaths={handleDropPaths}
       />
     </div>
   );

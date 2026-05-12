@@ -47,6 +47,16 @@ export default function TabBar({
               type="button"
               className={'tab no-drag' + (active ? ' is-active' : '')}
               onClick={() => onSelect(tab.id)}
+              onAuxClick={(e) => {
+                if (e.button === 1) {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  onClose(tab.id);
+                }
+              }}
+              onMouseDown={(e) => {
+                if (e.button === 1) e.preventDefault();
+              }}
               title={tab.videoPath ?? labels.untitled}
             >
               <span className="tab-title">{tabTitle(tab, labels.untitled)}</span>
