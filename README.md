@@ -1,10 +1,18 @@
+<div align="center">
+
+<img src="build/icon.png" alt="Subbi" width="160" height="160" />
+
 # Subbi
 
 **Drop a video, get burned-in subtitles. Local, offline, open-source.**
 
-Subbi is a desktop app that turns any video into a fully subtitled clip in minutes. It transcribes with Whisper, lets you style the subtitles like a pro, cut silences, crop for vertical or square aspect ratios, clean up audio, and exports everything in one pass.
+Transcribe with Whisper, style the subtitles like a pro, cut silences, crop for vertical or square aspect ratios, clean up audio — all in one desktop app. No subscription. No uploads. No watermark. Fork it, ship it, use it for whatever you want.
 
-No subscription. No upload-your-video-to-our-servers. No watermark. Free and open source — fork it, ship it, use it for whatever you want.
+<br />
+
+<img src="docs/screenshot.png" alt="Subbi editor" width="100%" />
+
+</div>
 
 ---
 
