@@ -5,13 +5,17 @@ import fs from 'fs';
 import os from 'os';
 import { randomUUID } from 'crypto';
 import { findFfmpeg, parseDurationFromStderr, parseTimeFromStderr } from './ffmpeg';
+import { transcribeOpenAI } from './transcriber-openai';
 
-export type WhisperModel = 'tiny' | 'medium' | 'large';
+export type WhisperModel = 'tiny' | 'medium';
+export type TranscribeEngine = 'local' | 'openai';
 
 export interface TranscribeOptions {
   videoPath: string;
   language: string;
   model: WhisperModel;
+  engine?: TranscribeEngine;
+  apiKey?: string;
 }
 
 export interface TranscribeResult {
@@ -22,7 +26,6 @@ export interface TranscribeResult {
 const MODEL_FILE: Record<WhisperModel, string> = {
   tiny:   'ggml-tiny.bin',
   medium: 'ggml-medium.bin',
-  large:  'ggml-large-v3.bin',
 };
 
 function resourceRoot(): string {
@@ -43,6 +46,12 @@ export async function transcribe(
   opts: TranscribeOptions,
   onProgress: (pct: number, line: string) => void
 ): Promise<TranscribeResult> {
+  if (opts.engine === 'openai') {
+    return transcribeOpenAI(
+      { videoPath: opts.videoPath, language: opts.language, apiKey: opts.apiKey || '' },
+      onProgress,
+    );
+  }
   const ffmpeg = findFfmpeg();
   const bin = whisperBinary();
   const model = modelPath(opts.model);

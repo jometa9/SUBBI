@@ -34,8 +34,13 @@ interface SubbiAPI {
   pickVideo(): Promise<string | null>;
   pathExists(path: string): Promise<boolean>;
   getPathForFile(file: File): string;
-  transcribe(opts: { videoPath: string; language: string; model: 'tiny' | 'medium' | 'large' }):
-    Promise<{ srtPath: string; srt: string }>;
+  transcribe(opts: {
+    videoPath: string;
+    language: string;
+    model: 'tiny' | 'medium';
+    engine?: 'local' | 'openai';
+    apiKey?: string;
+  }): Promise<{ srtPath: string; srt: string }>;
   burn(opts: { videoPath: string; srtPath: string; style: SubbiStyle }):
     Promise<string>;
   detectSilences(opts: { videoPath: string; thresholdDb?: number; minDurSec?: number }):

@@ -69,7 +69,13 @@ export const TRANSLATIONS: Record<UiLang, Record<string, string>> = {
     language: 'Language',
     langSpanish: 'Spanish', langEnglish: 'English', langPortuguese: 'Portuguese', langAuto: 'Auto',
     model: 'Model',
-    modelTiny: 'Tiny (fast)', modelMedium: 'Medium', modelLarge: 'Large (accurate)',
+    modelFast: 'Fast', modelMedium: 'Medium', modelCloud: 'Cloud',
+    apiKey: 'OpenAI API key',
+    apiKeyShow: 'Show',
+    apiKeyHide: 'Hide',
+    apiKeyClear: 'Clear',
+    apiKeyHint: 'Your key is saved locally on this machine. You can clear it anytime.',
+    openaiKeyMissing: 'Enter your OpenAI API key first.',
     transcribe: 'Transcribe', transcribing: 'Transcribing',
     subtitleStyle: 'Subtitle style',
     font: 'Font', size: 'Size', vertical: 'Vertical', horizontal: 'Horizontal',
@@ -179,6 +185,10 @@ export const TRANSLATIONS: Record<UiLang, Record<string, string>> = {
     'err.audioPrep': 'Could not prepare the audio for transcription.',
     'err.transcribe': 'Transcription failed.',
     'err.subtitlesMissing': 'No subtitles were produced.',
+    'err.openaiKeyMissing': 'OpenAI API key is required.',
+    'err.openaiAuth': 'OpenAI rejected the API key. Check it and try again.',
+    'err.openaiRate': 'OpenAI rate limit reached. Try again in a moment.',
+    'err.openaiRequest': 'OpenAI transcription request failed.',
     'err.export': 'Export failed.',
     'err.cut': 'Trimming failed.',
     'err.burn': 'Subtitle burn failed.',
@@ -215,7 +225,13 @@ export const TRANSLATIONS: Record<UiLang, Record<string, string>> = {
     language: 'Idioma',
     langSpanish: 'Español', langEnglish: 'Inglés', langPortuguese: 'Portugués', langAuto: 'Auto',
     model: 'Modelo',
-    modelTiny: 'Tiny (rápido)', modelMedium: 'Medium', modelLarge: 'Large (preciso)',
+    modelFast: 'Rápido', modelMedium: 'Medio', modelCloud: 'Nube',
+    apiKey: 'API key de OpenAI',
+    apiKeyShow: 'Mostrar',
+    apiKeyHide: 'Ocultar',
+    apiKeyClear: 'Borrar',
+    apiKeyHint: 'Tu clave se guarda localmente en esta máquina. Podés borrarla cuando quieras.',
+    openaiKeyMissing: 'Ingresá tu API key de OpenAI primero.',
     transcribe: 'Transcribir', transcribing: 'Transcribiendo',
     subtitleStyle: 'Estilo del subtítulo',
     font: 'Fuente', size: 'Tamaño', vertical: 'Vertical', horizontal: 'Horizontal',
@@ -325,6 +341,10 @@ export const TRANSLATIONS: Record<UiLang, Record<string, string>> = {
     'err.audioPrep': 'No se pudo preparar el audio para transcribir.',
     'err.transcribe': 'La transcripción falló.',
     'err.subtitlesMissing': 'No se generaron subtítulos.',
+    'err.openaiKeyMissing': 'Falta la API key de OpenAI.',
+    'err.openaiAuth': 'OpenAI rechazó la API key. Revisala e intentá de nuevo.',
+    'err.openaiRate': 'Límite de uso de OpenAI alcanzado. Probá en un rato.',
+    'err.openaiRequest': 'La transcripción con OpenAI falló.',
     'err.export': 'La exportación falló.',
     'err.cut': 'No se pudieron quitar los silencios.',
     'err.burn': 'No se pudieron incrustar los subtítulos.',
@@ -471,6 +491,21 @@ const STORAGE_KEY = 'subbi:settings:v2';
 const PROJECT_PREFIX = 'subbi:proj:v1:';
 export const LAST_VIDEO_KEY = 'subbi:lastVideoPath:v1';
 
+type TranscribeModel = 'fast' | 'medium' | 'cloud';
+
+function normalizeModel(raw: unknown, engine?: unknown): TranscribeModel {
+  if (engine === 'openai' || raw === 'cloud') return 'cloud';
+  if (raw === 'fast' || raw === 'tiny') return 'fast';
+  if (raw === 'medium' || raw === 'large') return 'medium';
+  return 'medium';
+}
+
+function modelToBackend(m: TranscribeModel): { engine: 'local' | 'openai'; whisper: 'tiny' | 'medium' } {
+  if (m === 'cloud') return { engine: 'openai', whisper: 'medium' };
+  if (m === 'fast')  return { engine: 'local',  whisper: 'tiny' };
+  return { engine: 'local', whisper: 'medium' };
+}
+
 type ProjectState = {
   silenceRegions: SilenceRegion[];
   thresholdDb: number;
@@ -488,7 +523,7 @@ type ProjectState = {
   rawCues: Cue[] | null;
   style: SubtitleStyle;
   language: string;
-  model: 'tiny' | 'medium' | 'large';
+  model: TranscribeModel;
   splitMarkers?: number[];
   cropMarkers?: number[];
   cropByZone?: Record<string, CropRect>;
@@ -576,10 +611,12 @@ function formatBytes(bytes: number): string {
 type PersistedSettings = {
   uiLang?: UiLang;
   language?: string;
-  model?: 'tiny' | 'medium' | 'large';
+  model?: TranscribeModel;
   style?: SubtitleStyle;
   theme?: ThemePref;
   openSections?: Record<string, boolean>;
+  transcribeEngine?: 'local' | 'openai';
+  openaiApiKey?: string;
 };
 
 export function loadSettings(): PersistedSettings {
@@ -626,7 +663,9 @@ export default function Editor(props: EditorProps) {
   const [videoUrl, setVideoUrl] = useState<string | null>(null);
   const [over, setOver] = useState(false);
   const [language, setLanguage] = useState(initial.language ?? 'es');
-  const [model, setModel] = useState<'tiny' | 'medium' | 'large'>(initial.model ?? 'medium');
+  const [model, setModel] = useState<TranscribeModel>(normalizeModel(initial.model, initial.transcribeEngine));
+  const [openaiApiKey, setOpenaiApiKey] = useState<string>(initial.openaiApiKey ?? '');
+  const [showApiKey, setShowApiKey] = useState<boolean>(false);
   const [style, setStyle] = useState<SubtitleStyle>({ ...DEFAULT_STYLE, ...(initial.style ?? {}) });
   const [proc, setProc] = useState<ProcessState>({ phase: 'idle' });
   const [currentTime, setCurrentTime] = useState(0);
@@ -942,6 +981,7 @@ export default function Editor(props: EditorProps) {
     setOpenSections(s => ({ ...s, [id]: !s[id] }));
 
   useEffect(() => { saveSettings({ language, model, style, openSections }); }, [language, model, style, openSections]);
+  useEffect(() => { saveSettings({ openaiApiKey }); }, [openaiApiKey]);
 
   const cycleTheme = () => {
     onThemePrefChange(themePref === 'system' ? 'light' : themePref === 'light' ? 'dark' : 'system');
@@ -1305,7 +1345,7 @@ export default function Editor(props: EditorProps) {
       setExcludedSegments(saved.excludedSegments ?? {});
       if (saved.style) setStyle({ ...DEFAULT_STYLE, ...saved.style });
       if (saved.language) setLanguage(saved.language);
-      if (saved.model) setModel(saved.model);
+      if (saved.model) setModel(normalizeModel(saved.model));
       if (typeof saved.timelineZoom === 'number') setTimelineZoom(saved.timelineZoom);
       if (typeof saved.previewZoom === 'number') setPreviewZoom(saved.previewZoom);
       if (typeof saved.currentTime === 'number') setCurrentTime(saved.currentTime);
@@ -1472,10 +1512,21 @@ export default function Editor(props: EditorProps) {
 
   async function transcribe() {
     if (!videoPath) return;
+    const { engine, whisper } = modelToBackend(model);
+    if (engine === 'openai' && !openaiApiKey.trim()) {
+      setProc({ phase: 'error', message: tEvt('evt:err.openaiKeyMissing') || t('openaiKeyMissing') });
+      return;
+    }
     logStickRef.current = true;
     setProc({ phase: 'transcribing', pct: 0, log: '' });
     try {
-      const r = await window.subbi.transcribe({ videoPath, language, model });
+      const r = await window.subbi.transcribe({
+        videoPath,
+        language,
+        model: whisper,
+        engine,
+        apiKey: engine === 'openai' ? openaiApiKey.trim() : undefined,
+      });
       setSrtPath(r.srtPath);
       setRawCues(parseSrt(r.srt));
       setProc({ phase: 'idle' });
@@ -2619,6 +2670,56 @@ export default function Editor(props: EditorProps) {
           </button>
           <div className="pr-section-body">
             <div className="pr-row">
+              <span className="pr-label">{t('model')}</span>
+              <Select
+                className="pr-input-flex"
+                value={model}
+                onChange={v => setModel(v as TranscribeModel)}
+                disabled={isBusy}
+                options={[
+                  { value: 'fast', label: t('modelFast') },
+                  { value: 'medium', label: t('modelMedium') },
+                  { value: 'cloud', label: t('modelCloud') },
+                ]}
+              />
+            </div>
+            {model === 'cloud' && (
+              <>
+                <div className="pr-row">
+                  <span className="pr-label">{t('apiKey')}</span>
+                  <input
+                    type={showApiKey ? 'text' : 'password'}
+                    className="pr-input pr-input-flex"
+                    value={openaiApiKey}
+                    onChange={e => setOpenaiApiKey(e.target.value)}
+                    placeholder="sk-..."
+                    disabled={isBusy}
+                    autoComplete="off"
+                    spellCheck={false}
+                  />
+                </div>
+                <div className="pr-row pr-row-end">
+                  <button
+                    type="button"
+                    className="pr-btn pr-btn-ghost"
+                    onClick={() => setShowApiKey(s => !s)}
+                    disabled={isBusy}
+                  >
+                    {showApiKey ? t('apiKeyHide') : t('apiKeyShow')}
+                  </button>
+                  <button
+                    type="button"
+                    className="pr-btn pr-btn-ghost"
+                    onClick={() => setOpenaiApiKey('')}
+                    disabled={isBusy || !openaiApiKey}
+                  >
+                    {t('apiKeyClear')}
+                  </button>
+                </div>
+                <div className="pr-hint">{t('apiKeyHint')}</div>
+              </>
+            )}
+            <div className="pr-row">
               <span className="pr-label">{t('language')}</span>
               <Select
                 className="pr-input-flex"
@@ -2633,22 +2734,12 @@ export default function Editor(props: EditorProps) {
                 ]}
               />
             </div>
-            <div className="pr-row">
-              <span className="pr-label">{t('model')}</span>
-              <Select
-                className="pr-input-flex"
-                value={model}
-                onChange={v => setModel(v as any)}
-                disabled={isBusy}
-                options={[
-                  { value: 'tiny', label: t('modelTiny') },
-                  { value: 'medium', label: t('modelMedium') },
-                  { value: 'large', label: t('modelLarge') },
-                ]}
-              />
-            </div>
             <div className="pr-row pr-row-end">
-              <button onClick={transcribe} disabled={!videoPath || isBusy} className="pr-btn">
+              <button
+                onClick={transcribe}
+                disabled={!videoPath || isBusy || (model === 'cloud' && !openaiApiKey.trim())}
+                className="pr-btn"
+              >
                 {proc.phase === 'transcribing' ? `${t('transcribing')}… ${proc.pct.toFixed(0)}%` : t('transcribe')}
               </button>
             </div>
