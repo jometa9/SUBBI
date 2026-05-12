@@ -15,7 +15,7 @@ import TabBar from './TabBar';
 import UpdateBanner from './UpdateBanner';
 
 const TABS_KEY = 'subbi:tabs:v1';
-const MAX_TABS = 10;
+const MAX_TABS = 50;
 
 export type Tab = { id: string; videoPath: string | null };
 type TabsState = { tabs: Tab[]; activeTabId: string };

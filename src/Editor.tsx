@@ -90,8 +90,9 @@ export const TRANSLATIONS: Record<UiLang, Record<string, string>> = {
     threshold: 'Threshold', minDuration: 'Min duration',
     autoMean: 'Auto (mean − 12 dB)',
     silencesFound: 'silences found',
-    clickRegionToToggle: 'Click red regions to keep them. Drag edges to adjust.',
+    clickRegionToToggle: 'Click red regions to keep them. Drag edges to adjust. Double-click purple regions to remove them.',
     noSilences: 'No silences detected at this threshold.',
+    addManualExclusion: 'Exclude at cursor',
     cropSection: 'Crop',
     aspectRatio: 'Aspect ratio',
     enableCrop: 'Enable crop',
@@ -276,8 +277,9 @@ export const TRANSLATIONS: Record<UiLang, Record<string, string>> = {
     threshold: 'Umbral', minDuration: 'Duración mín.',
     autoMean: 'Auto (promedio − 12 dB)',
     silencesFound: 'silencios encontrados',
-    clickRegionToToggle: 'Click en las regiones rojas para conservarlas. Arrastrá los bordes para ajustar.',
+    clickRegionToToggle: 'Click en las regiones rojas para conservarlas. Arrastrá los bordes para ajustar. Doble click en regiones violetas para eliminarlas.',
     noSilences: 'No se detectaron silencios con este umbral.',
+    addManualExclusion: 'Excluir en cursor',
     cropSection: 'Recortar',
     aspectRatio: 'Relación de aspecto',
     enableCrop: 'Activar recorte',
@@ -1666,10 +1668,14 @@ export default function Editor(props: EditorProps) {
       setMeanVolumeDb(res.meanVolumeDb);
       setVideoDuration(res.duration);
       if (autoThreshold) setThresholdDb(Math.round(res.thresholdDb));
-      setSilenceRegions(res.silences.map((s, i) => ({
-        id: `sil-${i}-${s.start.toFixed(3)}`,
-        start: s.start, end: s.end, enabled: true,
-      })));
+      setSilenceRegions(prev => {
+        const manual = prev.filter(r => r.manual);
+        const detected = res.silences.map((s, i) => ({
+          id: `sil-${i}-${s.start.toFixed(3)}`,
+          start: s.start, end: s.end, enabled: true,
+        }));
+        return [...detected, ...manual];
+      });
       setProc({ phase: 'idle' });
     } catch (err: any) {
       setProc({ phase: 'error', message: tEvt(String(err?.message || err)) || String(err?.message || err) });
@@ -1681,6 +1687,17 @@ export default function Editor(props: EditorProps) {
   }
   function updateSilence(id: string, start: number, end: number) {
     setSilenceRegions(rs => rs.map(r => r.id === id ? { ...r, start, end } : r));
+  }
+  function removeSilence(id: string) {
+    setSilenceRegions(rs => rs.filter(r => r.id !== id));
+  }
+  function addManualExclusion() {
+    if (!videoDuration) return;
+    const start = Math.max(0, Math.min(currentTime, videoDuration - 0.1));
+    const end = Math.min(videoDuration, start + 1);
+    if (end - start < 0.05) return;
+    const id = `man-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
+    setSilenceRegions(rs => [...rs, { id, start, end, enabled: true, manual: true }]);
   }
 
   function buildKeepRanges(): { start: number; end: number }[] {
@@ -2546,6 +2563,7 @@ export default function Editor(props: EditorProps) {
                       currentTime={currentTime}
                       onToggleRegion={toggleSilence}
                       onUpdateRegion={updateSilence}
+                      onRemoveRegion={removeSilence}
                       splitMarkers={splitMarkers}
                       selectedMarker={selectedMarker}
                       onSelectMarker={setSelectedMarker}
@@ -2954,6 +2972,9 @@ export default function Editor(props: EditorProps) {
               </label>
             </div>
             <div className="pr-row pr-row-end">
+              <button onClick={addManualExclusion} disabled={!videoPath || isSilenceBusy || !videoDuration} className="pr-btn pr-btn-ghost">
+                {t('addManualExclusion')}
+              </button>
               <button onClick={detectSilencesNow} disabled={!videoPath || isSilenceBusy} className="pr-btn">
                 {proc.phase === 'detecting' ? `${t('detecting')}…` : t('detectSilences')}
               </button>

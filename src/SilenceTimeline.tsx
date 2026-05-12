@@ -7,6 +7,7 @@ export type SilenceRegion = {
   start: number;
   end: number;
   enabled: boolean;
+  manual?: boolean;
 };
 
 export interface SilenceTimelineHandle {
@@ -22,6 +23,7 @@ interface Props {
   currentTime: number;
   onToggleRegion: (id: string) => void;
   onUpdateRegion?: (id: string, start: number, end: number) => void;
+  onRemoveRegion?: (id: string) => void;
   splitMarkers?: number[];
   selectedMarker?: number | null;
   onSelectMarker?: (time: number | null) => void;
@@ -39,7 +41,7 @@ function waveColors(theme: 'light' | 'dark' | undefined) {
 const SilenceTimeline = React.forwardRef<SilenceTimelineHandle, Props>(function SilenceTimeline(
   {
     videoEl, peaks, duration, regions, currentTime,
-    onToggleRegion, onUpdateRegion,
+    onToggleRegion, onUpdateRegion, onRemoveRegion,
     splitMarkers = [], selectedMarker = null, onSelectMarker,
     height = 84, theme,
   },
@@ -49,6 +51,7 @@ const SilenceTimeline = React.forwardRef<SilenceTimelineHandle, Props>(function 
   const wsRef = useRef<WaveSurfer | null>(null);
   const regionsPluginRef = useRef<ReturnType<typeof RegionsPlugin.create> | null>(null);
   const regionMapRef = useRef<Map<string, Region>>(new Map());
+  const regionsDataRef = useRef<Map<string, SilenceRegion>>(new Map());
   const seekingFromVideoRef = useRef(false);
   const [pluginReadyTick, setPluginReadyTick] = useState(0);
 
@@ -95,6 +98,14 @@ const SilenceTimeline = React.forwardRef<SilenceTimelineHandle, Props>(function 
       onToggleRegion(region.id);
     });
 
+    regionsPlugin.on('region-double-clicked', (region, e) => {
+      const data = regionsDataRef.current.get(region.id);
+      if (data?.manual) {
+        e.stopPropagation();
+        onRemoveRegion?.(region.id);
+      }
+    });
+
     regionsPlugin.on('region-updated', (region) => {
       onUpdateRegion?.(region.id, region.start, region.end);
     });
@@ -137,14 +148,18 @@ const SilenceTimeline = React.forwardRef<SilenceTimelineHandle, Props>(function 
       if (!incomingIds.has(id)) {
         try { reg.remove(); } catch {}
         regionMapRef.current.delete(id);
+        regionsDataRef.current.delete(id);
       }
     }
 
     for (const r of regions) {
+      regionsDataRef.current.set(r.id, r);
       const existing = regionMapRef.current.get(r.id);
-      const color = r.enabled
-        ? 'rgba(239, 68, 68, 0.35)'
-        : 'rgba(120, 120, 120, 0.18)';
+      const color = !r.enabled
+        ? 'rgba(120, 120, 120, 0.18)'
+        : r.manual
+          ? 'rgba(168, 85, 247, 0.38)'
+          : 'rgba(239, 68, 68, 0.35)';
       if (existing) {
         if (existing.start !== r.start || existing.end !== r.end) {
           existing.setOptions({ start: r.start, end: r.end, color });
@@ -157,7 +172,7 @@ const SilenceTimeline = React.forwardRef<SilenceTimelineHandle, Props>(function 
           start: r.start,
           end: r.end,
           color,
-          drag: false,
+          drag: !!r.manual,
           resize: true,
         });
         regionMapRef.current.set(r.id, reg);
