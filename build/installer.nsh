@@ -1,0 +1,62 @@
+; Custom NSIS macros for the Subbi installer.
+; Cleans prior installations on overwrite and hides bundled resources.
+
+!macro preparePriorInstallForOverwrite
+  StrCpy $R9 ""
+  ReadRegStr $R9 HKCU "${INSTALL_REGISTRY_KEY}" InstallLocation
+  ${if} $R9 == ""
+    ReadRegStr $R9 HKLM "${INSTALL_REGISTRY_KEY}" InstallLocation
+  ${endif}
+  ${if} $R9 != ""
+    nsExec::ExecToLog 'cmd.exe /c if exist "$R9" attrib -R -H -S "$R9\*" /S /D'
+    nsExec::ExecToLog 'cmd.exe /c set "SUBBI_INST=$R9" && powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command "if ($$env:SUBBI_INST) { Get-CimInstance Win32_Process | Where-Object { $$_.ExecutablePath -and ($$_.ExecutablePath).StartsWith($$env:SUBBI_INST, [System.StringComparison]::OrdinalIgnoreCase) } | ForEach-Object { Stop-Process -Id $$_.ProcessId -Force -ErrorAction SilentlyContinue } }"'
+  ${endif}
+  nsExec::ExecToLog 'taskkill /IM "${PRODUCT_FILENAME}.exe" /F /T 2>nul'
+  nsExec::ExecToLog 'cmd.exe /c ping -n 2 127.0.0.1 >nul'
+!macroend
+
+!macro bypassBrokenOldUninstallerAndRemoveTree
+  DeleteRegKey HKCU "${UNINSTALL_REGISTRY_KEY}"
+  !ifdef UNINSTALL_REGISTRY_KEY_2
+    DeleteRegKey HKCU "${UNINSTALL_REGISTRY_KEY_2}"
+  !endif
+  DeleteRegKey HKCU "${INSTALL_REGISTRY_KEY}"
+  DeleteRegKey HKLM "${UNINSTALL_REGISTRY_KEY}"
+  !ifdef UNINSTALL_REGISTRY_KEY_2
+    DeleteRegKey HKLM "${UNINSTALL_REGISTRY_KEY_2}"
+  !endif
+  DeleteRegKey HKLM "${INSTALL_REGISTRY_KEY}"
+  ClearErrors
+  ${if} ${FileExists} "$R9\${APP_EXECUTABLE_FILENAME}"
+    RMDir /r $R9
+  ${endif}
+  ClearErrors
+  nsExec::ExecToLog 'cmd.exe /c ping -n 2 127.0.0.1 >nul'
+!macroend
+
+!macro customInit
+  !insertmacro preparePriorInstallForOverwrite
+!macroend
+
+!macro customCheckAppRunning
+  !insertmacro preparePriorInstallForOverwrite
+  !insertmacro bypassBrokenOldUninstallerAndRemoveTree
+!macroend
+
+!macro customRemoveFiles
+  nsExec::ExecToLog 'cmd.exe /c if exist "$INSTDIR" attrib -R -H -S "$INSTDIR\*" /S /D'
+  nsExec::ExecToLog 'cmd.exe /c ping -n 2 127.0.0.1 >nul'
+  RMDir /r $INSTDIR
+!macroend
+
+!macro customInstall
+  ; Hide the bundled model + binaries from casual users in Explorer.
+  ; The folder is still accessible if the user enables "Show hidden files".
+  ${if} ${FileExists} "$INSTDIR\resources\whisper"
+    nsExec::ExecToLog 'cmd.exe /c attrib +H "$INSTDIR\resources\whisper" /D'
+    nsExec::ExecToLog 'cmd.exe /c attrib +H "$INSTDIR\resources\whisper\*" /S /D'
+  ${endif}
+  ${if} ${FileExists} "$INSTDIR\resources\ffmpeg"
+    nsExec::ExecToLog 'cmd.exe /c attrib +H "$INSTDIR\resources\ffmpeg" /D'
+  ${endif}
+!macroend

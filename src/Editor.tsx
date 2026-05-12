@@ -161,6 +161,15 @@ export const TRANSLATIONS: Record<UiLang, Record<string, string>> = {
     segmentsCountTip: '{in} included · {out} excluded',
     zoomTimeline: 'Zoom timeline',
     zoomReset: 'Reset zoom',
+    modelDownloadIntro: 'The {model} model is not installed yet.',
+    modelDownloading: 'Downloading {model} ({pct}%)',
+    modelReady: '{model} model ready.',
+    modelDownloadRetry: 'Retry',
+    modelSizeFast: '~74 MB',
+    modelSizeMedium: '~1.46 GB',
+    'log.modelDl.start': 'Downloading model…',
+    'log.modelDl.progress': 'Downloading model: {pct}%',
+    'log.modelDl.done': 'Model ready.',
     'log.transcribe.extractingAudio': 'Preparing audio…',
     'log.transcribe.extractingProgress': 'Preparing audio: {pct}%',
     'log.transcribe.audioReady': 'Audio ready.',
@@ -182,6 +191,7 @@ export const TRANSLATIONS: Record<UiLang, Record<string, string>> = {
     'err.engineMissing': 'A required component is missing.',
     'err.transcriberMissing': 'The transcription engine is missing.',
     'err.modelMissing': 'The transcription model is missing.',
+    'err.modelDownload': 'Could not download the model. Check your connection and retry.',
     'err.audioPrep': 'Could not prepare the audio for transcription.',
     'err.transcribe': 'Transcription failed.',
     'err.subtitlesMissing': 'No subtitles were produced.',
@@ -317,6 +327,15 @@ export const TRANSLATIONS: Record<UiLang, Record<string, string>> = {
     segmentsCountTip: '{in} incluidos · {out} excluidos',
     zoomTimeline: 'Zoom de la timeline',
     zoomReset: 'Restablecer zoom',
+    modelDownloadIntro: 'El modelo {model} aún no está instalado.',
+    modelDownloading: 'Descargando {model} ({pct}%)',
+    modelReady: 'Modelo {model} listo.',
+    modelDownloadRetry: 'Reintentar',
+    modelSizeFast: '~74 MB',
+    modelSizeMedium: '~1.46 GB',
+    'log.modelDl.start': 'Descargando modelo…',
+    'log.modelDl.progress': 'Descargando modelo: {pct}%',
+    'log.modelDl.done': 'Modelo listo.',
     'log.transcribe.extractingAudio': 'Preparando audio…',
     'log.transcribe.extractingProgress': 'Preparando audio: {pct}%',
     'log.transcribe.audioReady': 'Audio listo.',
@@ -338,6 +357,7 @@ export const TRANSLATIONS: Record<UiLang, Record<string, string>> = {
     'err.engineMissing': 'Falta un componente requerido.',
     'err.transcriberMissing': 'Falta el motor de transcripción.',
     'err.modelMissing': 'Falta el modelo de transcripción.',
+    'err.modelDownload': 'No se pudo descargar el modelo. Revisá la conexión y reintentá.',
     'err.audioPrep': 'No se pudo preparar el audio para transcribir.',
     'err.transcribe': 'La transcripción falló.',
     'err.subtitlesMissing': 'No se generaron subtítulos.',
@@ -668,6 +688,10 @@ export default function Editor(props: EditorProps) {
   const [showApiKey, setShowApiKey] = useState<boolean>(false);
   const [style, setStyle] = useState<SubtitleStyle>({ ...DEFAULT_STYLE, ...(initial.style ?? {}) });
   const [proc, setProc] = useState<ProcessState>({ phase: 'idle' });
+  const [modelStatus, setModelStatus] = useState<Record<'tiny' | 'medium', { phase: 'idle' | 'checking' | 'downloading' | 'present' | 'error'; pct?: number; error?: string }>>({
+    tiny: { phase: 'idle' },
+    medium: { phase: 'idle' },
+  });
   const [currentTime, setCurrentTime] = useState(0);
 
   const [srtPath, setSrtPath] = useState<string | null>(null);
@@ -1273,10 +1297,43 @@ export default function Editor(props: EditorProps) {
       } else if (evt.kind === 'export') {
         setProc(p => p.phase === 'exporting'
           ? { phase: 'exporting', pct: evt.pct, log: msg ? (p.log + msg + '\n').slice(-2000) : p.log } : p);
+      } else if (evt.kind === 'modelDownload') {
+        setModelStatus(s => ({ ...s, [evt.model]: { phase: 'downloading', pct: evt.pct } }));
       }
     });
     return off;
   }, [uiLang]);
+
+  useEffect(() => {
+    if (!openSections.transcription) return;
+    if (model === 'cloud') return;
+    const { whisper } = modelToBackend(model);
+    setModelStatus(s => {
+      const cur = s[whisper];
+      if (cur.phase === 'downloading' || cur.phase === 'present' || cur.phase === 'checking') return s;
+      return { ...s, [whisper]: { phase: 'checking' } };
+    });
+    let cancelled = false;
+    (async () => {
+      try {
+        const present = await window.subbi.checkModel(whisper);
+        if (cancelled) return;
+        if (present) {
+          setModelStatus(s => ({ ...s, [whisper]: { phase: 'present' } }));
+          return;
+        }
+        setModelStatus(s => ({ ...s, [whisper]: { phase: 'downloading', pct: 0 } }));
+        await window.subbi.downloadModel(whisper);
+        if (cancelled) return;
+        setModelStatus(s => ({ ...s, [whisper]: { phase: 'present', pct: 100 } }));
+      } catch (err: any) {
+        if (cancelled) return;
+        const raw = String(err?.message || err);
+        setModelStatus(s => ({ ...s, [whisper]: { phase: 'error', error: tEvt(raw) || raw } }));
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [model, openSections.transcription]);
 
   const logText = (proc.phase === 'transcribing' || proc.phase === 'exporting') ? proc.log : '';
   useEffect(() => {
@@ -2683,6 +2740,45 @@ export default function Editor(props: EditorProps) {
                 ]}
               />
             </div>
+            {model !== 'cloud' && (() => {
+              const whisper = modelToBackend(model).whisper;
+              const status = modelStatus[whisper];
+              if (status.phase === 'present' || status.phase === 'idle') return null;
+              const modelLabel = model === 'fast' ? t('modelFast') : t('modelMedium');
+              const sizeLabel = model === 'fast' ? t('modelSizeFast') : t('modelSizeMedium');
+              const pct = Math.max(0, Math.min(100, status.pct ?? 0));
+              return (
+                <div className="pr-model-dl">
+                  {status.phase === 'checking' && (
+                    <div className="pr-hint">{t('modelDownloadIntro').replace('{model}', `${modelLabel} (${sizeLabel})`)}</div>
+                  )}
+                  {status.phase === 'downloading' && (
+                    <>
+                      <div className="pr-hint">
+                        {t('modelDownloading').replace('{model}', modelLabel).replace('{pct}', pct.toFixed(0))}
+                      </div>
+                      <div className="pr-progress" role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(pct)}>
+                        <div className="pr-progress-bar" style={{ width: `${pct}%` }} />
+                      </div>
+                    </>
+                  )}
+                  {status.phase === 'error' && (
+                    <>
+                      <div className="pr-hint pr-hint-error">{status.error || tEvt('evt:err.modelDownload')}</div>
+                      <div className="pr-row pr-row-end">
+                        <button
+                          type="button"
+                          className="pr-btn pr-btn-ghost"
+                          onClick={() => setModelStatus(s => ({ ...s, [whisper]: { phase: 'idle' } }))}
+                        >
+                          {t('modelDownloadRetry')}
+                        </button>
+                      </div>
+                    </>
+                  )}
+                </div>
+              );
+            })()}
             {model === 'cloud' && (
               <>
                 <div className="pr-row">

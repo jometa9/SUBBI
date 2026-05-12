@@ -2,6 +2,7 @@ import { app, BrowserWindow, ipcMain, dialog, protocol } from 'electron';
 import path from 'path';
 import fs from 'fs';
 import { transcribe, type TranscribeOptions } from './transcriber';
+import { hasModel, downloadModel, type WhisperModel } from './models';
 import { burn, type BurnOptions } from './burner';
 import { detectSilences, cutSilences, extractPeaks, type DetectSilencesOptions, type CutSilencesOptions } from './silence';
 import { exportVideo, cancelExport, type ExportOptions } from './export';
@@ -97,6 +98,17 @@ ipcMain.handle('subbi:pickVideo', async () => {
   });
   if (r.canceled || r.filePaths.length === 0) return null;
   return r.filePaths[0];
+});
+
+ipcMain.handle('subbi:checkModel', async (_e, model: WhisperModel) => {
+  return hasModel(model);
+});
+
+ipcMain.handle('subbi:downloadModel', async (_e, model: WhisperModel) => {
+  await downloadModel(model, (pct, line) => {
+    mainWindow?.webContents.send('subbi:progress', { kind: 'modelDownload', model, pct, line });
+  });
+  return true;
 });
 
 ipcMain.handle('subbi:transcribe', async (_e, opts: TranscribeOptions) => {

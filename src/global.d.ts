@@ -28,7 +28,8 @@ type SubbiProgressEvent =
   | { kind: 'transcribe'; pct: number; line: string }
   | { kind: 'burn'; pct: number; line: string }
   | { kind: 'cut'; pct: number; line: string }
-  | { kind: 'export'; pct: number; line: string };
+  | { kind: 'export'; pct: number; line: string }
+  | { kind: 'modelDownload'; model: 'tiny' | 'medium'; pct: number; line: string };
 
 interface SubbiAPI {
   pickVideo(): Promise<string | null>;
@@ -41,6 +42,8 @@ interface SubbiAPI {
     engine?: 'local' | 'openai';
     apiKey?: string;
   }): Promise<{ srtPath: string; srt: string }>;
+  checkModel(model: 'tiny' | 'medium'): Promise<boolean>;
+  downloadModel(model: 'tiny' | 'medium'): Promise<boolean>;
   burn(opts: { videoPath: string; srtPath: string; style: SubbiStyle }):
     Promise<string>;
   detectSilences(opts: { videoPath: string; thresholdDb?: number; minDurSec?: number }):

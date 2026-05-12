@@ -6,8 +6,9 @@ import os from 'os';
 import { randomUUID } from 'crypto';
 import { findFfmpeg, parseDurationFromStderr, parseTimeFromStderr } from './ffmpeg';
 import { transcribeOpenAI } from './transcriber-openai';
+import { resolveModelPath, type WhisperModel } from './models';
 
-export type WhisperModel = 'tiny' | 'medium';
+export type { WhisperModel };
 export type TranscribeEngine = 'local' | 'openai';
 
 export interface TranscribeOptions {
@@ -23,11 +24,6 @@ export interface TranscribeResult {
   srt: string;
 }
 
-const MODEL_FILE: Record<WhisperModel, string> = {
-  tiny:   'ggml-tiny.bin',
-  medium: 'ggml-medium.bin',
-};
-
 function resourceRoot(): string {
   if (app.isPackaged) return path.join(process.resourcesPath, 'whisper');
   return path.resolve(__dirname, '..', '..', 'resources', 'whisper');
@@ -36,10 +32,6 @@ function resourceRoot(): string {
 function whisperBinary(): string {
   const name = process.platform === 'win32' ? 'whisper-cli.exe' : 'whisper-cli';
   return path.join(resourceRoot(), 'win32-x64', name);
-}
-
-function modelPath(m: WhisperModel): string {
-  return path.join(resourceRoot(), MODEL_FILE[m]);
 }
 
 export async function transcribe(
@@ -54,9 +46,9 @@ export async function transcribe(
   }
   const ffmpeg = findFfmpeg();
   const bin = whisperBinary();
-  const model = modelPath(opts.model);
+  const model = resolveModelPath(opts.model);
   if (!fs.existsSync(bin)) throw new Error('evt:err.transcriberMissing');
-  if (!fs.existsSync(model)) throw new Error('evt:err.modelMissing');
+  if (!model) throw new Error('evt:err.modelMissing');
 
   const tmpDir = path.join(os.tmpdir(), 'subbi');
   fs.mkdirSync(tmpDir, { recursive: true });

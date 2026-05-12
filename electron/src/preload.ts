@@ -7,6 +7,8 @@ contextBridge.exposeInMainWorld('subbi', {
     try { return webUtils.getPathForFile(file); } catch { return ''; }
   },
   transcribe: (opts: any) => ipcRenderer.invoke('subbi:transcribe', opts),
+  checkModel: (model: 'tiny' | 'medium') => ipcRenderer.invoke('subbi:checkModel', model),
+  downloadModel: (model: 'tiny' | 'medium') => ipcRenderer.invoke('subbi:downloadModel', model),
   burn: (opts: any) => ipcRenderer.invoke('subbi:burn', opts),
   detectSilences: (opts: any) => ipcRenderer.invoke('subbi:detectSilences', opts),
   cutSilences: (opts: any) => ipcRenderer.invoke('subbi:cutSilences', opts),
