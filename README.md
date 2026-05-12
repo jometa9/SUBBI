@@ -10,7 +10,7 @@ Transcribe with Whisper, style the subtitles like a pro, cut silences, crop for 
 
 <br />
 
-[**Download for macOS / Windows / Linux**](https://github.com/jometa9/subbi/releases/latest) · [Report an issue](https://github.com/jometa9/subbi/issues)
+[**Download for macOS / Windows**](https://github.com/jometa9/subbi/releases/latest) · [Report an issue](https://github.com/jometa9/subbi/issues)
 
 <br />
 
@@ -146,7 +146,6 @@ Everything happens in a single ffmpeg pipeline:
 
 - **macOS** — Apple Silicon (arm64), shipped as `.pkg`.
 - **Windows** — x64, NSIS installer.
-- **Linux** — generic build.
 
 ---
 
@@ -156,7 +155,6 @@ Pre-built installers are published on the [Releases page](https://github.com/jom
 
 - **macOS** (Apple Silicon) — `Subbi-Setup.pkg`
 - **Windows** (x64) — `Subbi-Setup.exe`
-- **Linux** — generic build
 
 ## Install (from source)
 
