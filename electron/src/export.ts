@@ -49,6 +49,9 @@ export interface ExportOptions {
   subtitles?: { srtPath: string; style: SubtitleStyle } | null;
   volumeDb?: number;
   noiseGateDb?: number | null;
+  saturation?: number;
+  opacity?: number;
+  opacityBgColor?: 'black' | 'white';
   outputPath?: string;
   videoWidth?: number;
   videoHeight?: number;
@@ -254,19 +257,35 @@ export async function exportVideo(
     ? buildAssFromSrt(opts.subtitles.srtPath, opts.subtitles.style, outSize.w, outSize.h)
     : null;
 
-  const preChain: string[] = [];
-  let preLabel = '[0:v]';
-  if (opts.crop) preChain.push(buildCropFilter(opts.crop, opts.cropBgColor || 'black'));
-  if (assPath) preChain.push(buildSubtitlesFilter(assPath));
-
   const filterParts: string[] = [];
-  let videoSourceLabel: string;
-  if (preChain.length > 0) {
-    filterParts.push(`${preLabel}${preChain.join(',')}[vpre]`);
-    videoSourceLabel = '[vpre]';
-  } else {
-    videoSourceLabel = '[0:v]';
+  let videoSourceLabel = '[0:v]';
+  const satRaw = typeof opts.saturation === 'number' && isFinite(opts.saturation) ? opts.saturation : 100;
+  const wantsSaturation = Math.abs(satRaw - 100) > 0.5;
+  const opRaw = typeof opts.opacity === 'number' && isFinite(opts.opacity) ? opts.opacity : 100;
+  const wantsOpacity = opRaw < 99.5;
+  const linearV: string[] = [];
+  if (opts.crop) linearV.push(buildCropFilter(opts.crop, opts.cropBgColor || 'black'));
+  if (wantsSaturation) {
+    const sat = Math.max(0, Math.min(3, satRaw / 100));
+    linearV.push(`eq=saturation=${sat.toFixed(3)}`);
   }
+  if (linearV.length > 0) {
+    filterParts.push(`${videoSourceLabel}${linearV.join(',')}[vpre]`);
+    videoSourceLabel = '[vpre]';
+  }
+  if (wantsOpacity) {
+    const opBg = opts.opacityBgColor === 'white' ? 'white' : 'black';
+    const alpha = Math.max(0, Math.min(1, opRaw / 100));
+    filterParts.push(`color=c=${opBg}:s=${outSize.w}x${outSize.h}[vopbg]`);
+    filterParts.push(`${videoSourceLabel}format=yuva420p,colorchannelmixer=aa=${alpha.toFixed(3)}[vopfg]`);
+    filterParts.push(`[vopbg][vopfg]overlay=shortest=1:format=auto[vop]`);
+    videoSourceLabel = '[vop]';
+  }
+  if (assPath) {
+    filterParts.push(`${videoSourceLabel}${buildSubtitlesFilter(assPath)}[vsubs]`);
+    videoSourceLabel = '[vsubs]';
+  }
+  const videoModified = videoSourceLabel !== '[0:v]';
 
   let mapV: string;
   let mapA: string;
@@ -310,7 +329,7 @@ export async function exportVideo(
     mapV = '[outv]';
     mapA = '[outa]';
     progressDuration = ranges.reduce((s, r) => s + (r.end - r.start), 0);
-  } else if (preChain.length > 0) {
+  } else if (videoModified) {
     mapV = videoSourceLabel;
     mapA = wantsAudioFx ? audioSourceLabel : '0:a?';
   } else if (wantsAudioFx) {

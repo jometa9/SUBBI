@@ -54,9 +54,13 @@ interface SubbiAPI {
     videoPath: string;
     keepRanges?: SubbiSilenceRange[];
     crop?: SubbiCropNormalized | null;
+    cropBgColor?: 'black' | 'white';
     subtitles?: { srtPath: string; style: SubbiStyle } | null;
     volumeDb?: number;
     noiseGateDb?: number | null;
+    saturation?: number;
+    opacity?: number;
+    opacityBgColor?: 'black' | 'white';
     outputPath?: string;
     videoWidth?: number;
     videoHeight?: number;
