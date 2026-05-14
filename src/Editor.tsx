@@ -77,6 +77,8 @@ export const TRANSLATIONS: Record<UiLang, Record<string, string>> = {
     apiKeyHint: 'Your key is saved locally on this machine. You can clear it anytime.',
     openaiKeyMissing: 'Enter your OpenAI API key first.',
     transcribe: 'Transcribe', transcribing: 'Transcribing',
+    removeTranscriptions: 'Remove transcriptions',
+    removeTranscriptionsTitle: 'Discard the generated subtitles for this video.',
     subtitleStyle: 'Subtitle style',
     font: 'Font', size: 'Size', vertical: 'Vertical', horizontal: 'Horizontal',
     color: 'Color', outline: 'Outline', outlineWidth: 'Outline width',
@@ -268,6 +270,8 @@ export const TRANSLATIONS: Record<UiLang, Record<string, string>> = {
     apiKeyHint: 'Tu clave se guarda localmente en esta máquina. Podés borrarla cuando quieras.',
     openaiKeyMissing: 'Ingresá tu API key de OpenAI primero.',
     transcribe: 'Transcribir', transcribing: 'Transcribiendo',
+    removeTranscriptions: 'Quitar transcripciones',
+    removeTranscriptionsTitle: 'Descartar los subtítulos generados para este video.',
     subtitleStyle: 'Estilo del subtítulo',
     font: 'Fuente', size: 'Tamaño', vertical: 'Vertical', horizontal: 'Horizontal',
     color: 'Color', outline: 'Contorno', outlineWidth: 'Grosor del contorno',
@@ -660,6 +664,7 @@ export type VideoTemplate = {
   noiseGateEnabled: boolean;
   language: string;
   model: TranscribeModel;
+  hadTranscription?: boolean;
 };
 
 function loadTemplates(): VideoTemplate[] {
@@ -1114,7 +1119,7 @@ export default function Editor(props: EditorProps) {
   const [confirmDeleteTemplate, setConfirmDeleteTemplate] = useState<string | null>(null);
   const [templateToast, setTemplateToast] = useState<string | null>(null);
   const templateToastTimerRef = useRef<number | null>(null);
-  const [pendingTemplateRun, setPendingTemplateRun] = useState<boolean>(false);
+  const [pendingTemplateRun, setPendingTemplateRun] = useState<{ transcribe: boolean } | null>(null);
 
   function flashTemplateToast(msg: string) {
     if (templateToastTimerRef.current) window.clearTimeout(templateToastTimerRef.current);
@@ -1140,6 +1145,7 @@ export default function Editor(props: EditorProps) {
       style, styleByZone, styleApplyToAll,
       volumeDb, noiseGateDb, noiseGateEnabled,
       language, model,
+      hadTranscription: !!(rawCues && rawCues.length > 0),
     };
     persistTemplates([tpl, ...templates]);
     setNewTemplateName('');
@@ -1173,7 +1179,7 @@ export default function Editor(props: EditorProps) {
     setLanguage(tpl.language);
     setModel(tpl.model);
     flashTemplateToast(t('templateAppliedToast'));
-    if (videoPath) setPendingTemplateRun(true);
+    if (videoPath) setPendingTemplateRun({ transcribe: tpl.hadTranscription !== false });
   }
   const toggleSection = (id: string) =>
     setOpenSections(s => ({ ...s, [id]: !s[id] }));
@@ -1795,11 +1801,12 @@ export default function Editor(props: EditorProps) {
 
   useEffect(() => {
     if (!pendingTemplateRun) return;
-    if (!videoPath) { setPendingTemplateRun(false); return; }
-    setPendingTemplateRun(false);
+    if (!videoPath) { setPendingTemplateRun(null); return; }
+    const shouldTranscribe = pendingTemplateRun.transcribe;
+    setPendingTemplateRun(null);
     (async () => {
       try { await detectSilencesNow(); } catch {}
-      try { await transcribe(); } catch {}
+      if (shouldTranscribe) { try { await transcribe(); } catch {} }
     })();
   }, [pendingTemplateRun, videoPath]);
 
@@ -2721,7 +2728,7 @@ export default function Editor(props: EditorProps) {
                         type="button"
                         className="pr-btn pr-btn-sm"
                         onClick={() => applyTemplate(tpl)}
-                        disabled={pendingTemplateRun}
+                        disabled={!!pendingTemplateRun}
                       >
                         {t('templateApply')}
                       </button>
@@ -3264,6 +3271,17 @@ export default function Editor(props: EditorProps) {
               />
             </div>
             <div className="pr-row pr-row-end">
+              {rawCues && rawCues.length > 0 && (
+                <button
+                  type="button"
+                  onClick={() => { setRawCues(null); setSrtPath(null); }}
+                  disabled={isBusy}
+                  className="pr-btn pr-btn-ghost"
+                  title={t('removeTranscriptionsTitle')}
+                >
+                  {t('removeTranscriptions')}
+                </button>
+              )}
               <button
                 onClick={transcribe}
                 disabled={!videoPath || isBusy || (model === 'cloud' && !openaiApiKey.trim()) || (model !== 'cloud' && modelStatus[modelToBackend(model).whisper].phase !== 'present')}

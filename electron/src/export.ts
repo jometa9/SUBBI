@@ -274,16 +274,26 @@ export async function exportVideo(
     videoSourceLabel = '[vpre]';
   }
   if (wantsOpacity) {
-    const opBg = opts.opacityBgColor === 'white' ? 'white' : 'black';
     const alpha = Math.max(0, Math.min(1, opRaw / 100));
-    filterParts.push(`color=c=${opBg}:s=${outSize.w}x${outSize.h}[vopbg]`);
-    filterParts.push(`${videoSourceLabel}format=yuva420p,colorchannelmixer=aa=${alpha.toFixed(3)}[vopfg]`);
-    filterParts.push(`[vopbg][vopfg]overlay=shortest=1:format=auto[vop]`);
+    const a = alpha.toFixed(4);
+    const bgVal = opts.opacityBgColor === 'white' ? 255 : 0;
+    const expr = bgVal === 0
+      ? `val*${a}`
+      : `val*${a}+${bgVal}*(1-${a})`;
+    filterParts.push(
+      `${videoSourceLabel}format=gbrp,lutrgb=r='${expr}':g='${expr}':b='${expr}',format=yuv420p,setsar=1[vop]`
+    );
     videoSourceLabel = '[vop]';
   }
   if (assPath) {
     filterParts.push(`${videoSourceLabel}${buildSubtitlesFilter(assPath)}[vsubs]`);
     videoSourceLabel = '[vsubs]';
+  }
+  if (videoSourceLabel !== '[0:v]') {
+    filterParts.push(
+      `${videoSourceLabel}scale=flags=bicubic:in_range=auto:out_range=tv,format=yuv420p[vnorm]`
+    );
+    videoSourceLabel = '[vnorm]';
   }
   const videoModified = videoSourceLabel !== '[0:v]';
 
@@ -356,6 +366,8 @@ export async function exportVideo(
   args.push('-map', mapV, '-map', mapA);
   if (filterParts.length > 0) {
     args.push('-c:v', 'libx264', '-preset', 'veryfast', '-crf', '20');
+    args.push('-pix_fmt', 'yuv420p', '-profile:v', 'high', '-level', '4.1');
+    args.push('-color_range', 'tv', '-colorspace', 'bt709', '-color_primaries', 'bt709', '-color_trc', 'bt709');
     args.push('-c:a', 'aac', '-b:a', '192k');
   } else {
     args.push('-c', 'copy');
