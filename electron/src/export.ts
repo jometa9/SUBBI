@@ -52,6 +52,7 @@ export interface ExportOptions {
   saturation?: number;
   opacity?: number;
   opacityBgColor?: 'black' | 'white';
+  speed?: number;
   outputPath?: string;
   videoWidth?: number;
   videoHeight?: number;
@@ -213,6 +214,15 @@ function computeCropOutputSize(c: CropNormalized, videoW: number, videoH: number
   return { w: evenCeil(videoW * c.width), h: evenCeil(videoH * c.height) };
 }
 
+function buildAtempoChain(speed: number): string {
+  let s = speed;
+  const parts: string[] = [];
+  while (s < 0.5 - 1e-6) { parts.push('atempo=0.5'); s = s / 0.5; }
+  while (s > 100 + 1e-6) { parts.push('atempo=100'); s = s / 100; }
+  parts.push(`atempo=${s.toFixed(4)}`);
+  return parts.join(',');
+}
+
 function buildCropFilter(c: CropNormalized, bgColor: 'black' | 'white' = 'black'): string {
   const innerX = clamp01(c.x);
   const innerY = clamp01(c.y);
@@ -350,6 +360,17 @@ export async function exportVideo(
     mapA = '0:a?';
   }
 
+  const speedRaw = typeof opts.speed === 'number' && isFinite(opts.speed) && opts.speed > 0 ? opts.speed : 1;
+  const wantsSpeed = Math.abs(speedRaw - 1) > 1e-3;
+  if (wantsSpeed) {
+    const vIn = mapV.startsWith('[') ? mapV : `[${mapV}]`;
+    const aIn = mapA.startsWith('[') ? mapA : '[0:a]';
+    filterParts.push(`${vIn}setpts=PTS/${speedRaw.toFixed(6)}[vspd]`);
+    filterParts.push(`${aIn}${buildAtempoChain(speedRaw)}[aspd]`);
+    mapV = '[vspd]';
+    mapA = '[aspd]';
+  }
+
   const args: string[] = ['-y', '-hide_banner', '-stats', '-i', opts.videoPath];
   let filterScriptPath: string | null = null;
   if (filterParts.length > 0) {
@@ -391,7 +412,8 @@ export async function exportVideo(
       const s = d.toString();
       err += s;
       if (totalSec == null) totalSec = parseDurationFromStderr(err);
-      const den = progressDuration ?? totalSec;
+      const rawDen = progressDuration ?? totalSec;
+      const den = rawDen != null ? rawDen / speedRaw : null;
       for (const line of s.split(/\r|\n/)) {
         if (!line.trim()) continue;
         const t = parseTimeFromStderr(line);

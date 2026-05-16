@@ -179,6 +179,7 @@ export const TRANSLATIONS: Record<UiLang, Record<string, string>> = {
     filterSaturation: 'Saturation',
     filterOpacity: 'Opacity',
     filterOpacityBg: 'Background',
+    filterSpeed: 'Speed',
     exportPartsHint: 'Export will produce one file per segment.',
     excludeSegment: 'Exclude from export',
     includeSegment: 'Include in export',
@@ -373,6 +374,7 @@ export const TRANSLATIONS: Record<UiLang, Record<string, string>> = {
     filterSaturation: 'Saturación',
     filterOpacity: 'Opacidad',
     filterOpacityBg: 'Fondo',
+    filterSpeed: 'Velocidad',
     exportPartsHint: 'Se exportará un archivo por cada segmento.',
     excludeSegment: 'Excluir del export',
     includeSegment: 'Incluir en el export',
@@ -1053,6 +1055,7 @@ export default function Editor(props: EditorProps) {
     setSaturation(100);
     setOpacity(100);
     setOpacityBgColor('black');
+    setPlaybackRate(1);
   }
   function resetStyle() {
     if (splitMarkers.length > 0) {
@@ -1955,6 +1958,7 @@ export default function Editor(props: EditorProps) {
           saturation: hasSaturation ? saturation : 100,
           opacity: hasOpacity ? opacity : 100,
           opacityBgColor: hasOpacity ? opacityBgColor : undefined,
+          speed: playbackRate !== 1 ? playbackRate : undefined,
           outputPath,
           videoWidth: videoW || undefined,
           videoHeight: videoH || undefined,
@@ -2315,22 +2319,6 @@ export default function Editor(props: EditorProps) {
               </svg>
               <span>{confirmReset === 'all' ? t('resetConfirm') : t('resetEdits')}</span>
             </button>
-            <span className="vc-toolbar-label">Speed</span>
-            <Select
-              className="vc-speed"
-              value={String(playbackRate)}
-              onChange={v => setPlaybackRate(+v)}
-              title="Playback speed"
-              options={[
-                { value: '0.25', label: '0.25×' },
-                { value: '0.5', label: '0.5×' },
-                { value: '0.75', label: '0.75×' },
-                { value: '1', label: '1×' },
-                { value: '1.25', label: '1.25×' },
-                { value: '1.5', label: '1.5×' },
-                { value: '2', label: '2×' },
-              ]}
-            />
           </div>
         )}
         {videoUrl && (() => {
@@ -3179,16 +3167,34 @@ export default function Editor(props: EditorProps) {
           <button className="pr-section-head" onClick={() => toggleSection('filters')} type="button">
             <span className="pr-section-chev" />
             <span className="pr-section-title">{t('sectionFilters')}</span>
-            {(saturation !== 100 || opacity !== 100) && (
+            {(saturation !== 100 || opacity !== 100 || playbackRate !== 1) && (
               <span className="pr-badge">ON</span>
             )}
             {renderSectionReset(
               'filters',
               resetFilters,
-              saturation !== 100 || opacity !== 100 || opacityBgColor !== 'black'
+              saturation !== 100 || opacity !== 100 || opacityBgColor !== 'black' || playbackRate !== 1
             )}
           </button>
           <div className="pr-section-body">
+            <div className="pr-row">
+              <span className="pr-label">{t('filterSpeed')}</span>
+              <Select
+                className="pr-input-flex"
+                value={String(playbackRate)}
+                onChange={v => setPlaybackRate(+v)}
+                disabled={!videoPath || isEditBusy}
+                options={[
+                  { value: '0.25', label: '0.25×' },
+                  { value: '0.5', label: '0.5×' },
+                  { value: '0.75', label: '0.75×' },
+                  { value: '1', label: '1×' },
+                  { value: '1.25', label: '1.25×' },
+                  { value: '1.5', label: '1.5×' },
+                  { value: '2', label: '2×' },
+                ]}
+              />
+            </div>
             <div className="pr-row">
               <span className="pr-label">{t('filterSaturation')}</span>
               <input
