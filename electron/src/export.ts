@@ -56,6 +56,15 @@ export interface ExportOptions {
   outputPath?: string;
   videoWidth?: number;
   videoHeight?: number;
+  bgAudio?: BgAudioMix | null;
+}
+
+export interface BgAudioMix {
+  path: string;
+  offset: number;
+  inPoint: number;
+  outPoint: number;
+  volumeDb: number;
 }
 
 type Cue = { start: number; end: number; text: string };
@@ -371,7 +380,28 @@ export async function exportVideo(
     mapA = '[aspd]';
   }
 
+  const bg = opts.bgAudio;
+  const wantsBg = !!bg && bg.outPoint - bg.inPoint > 0.02;
+  if (wantsBg) {
+    const inPoint = Math.max(0, bg!.inPoint);
+    const outPoint = Math.max(inPoint + 0.02, bg!.outPoint);
+    const offsetMs = Math.max(0, Math.round(bg!.offset * 1000));
+    const bgVolDb = typeof bg!.volumeDb === 'number' && isFinite(bg!.volumeDb) ? bg!.volumeDb : 0;
+    filterParts.push(
+      `[1:a]atrim=start=${inPoint.toFixed(3)}:end=${outPoint.toFixed(3)},asetpts=PTS-STARTPTS,adelay=${offsetMs}|${offsetMs},volume=${bgVolDb.toFixed(2)}dB[bgmix]`
+    );
+    const aIn = mapA.startsWith('[') ? mapA : `[${mapA.replace('?', '')}]`;
+    if (!mapA.startsWith('[')) {
+      filterParts.push(`[0:a]anull[amain]`);
+      filterParts.push(`[amain][bgmix]amix=inputs=2:duration=first:dropout_transition=0:normalize=0[aout]`);
+    } else {
+      filterParts.push(`${aIn}[bgmix]amix=inputs=2:duration=first:dropout_transition=0:normalize=0[aout]`);
+    }
+    mapA = '[aout]';
+  }
+
   const args: string[] = ['-y', '-hide_banner', '-stats', '-i', opts.videoPath];
+  if (wantsBg) args.push('-i', bg!.path);
   let filterScriptPath: string | null = null;
   if (filterParts.length > 0) {
     const filterGraph = filterParts.join(';');

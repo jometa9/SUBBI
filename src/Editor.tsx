@@ -112,6 +112,13 @@ export const TRANSLATIONS: Record<UiLang, Record<string, string>> = {
     audioGate: 'Noise gate',
     audioGateHint: 'Mute audio below the threshold (keeps voice, drops low-level noise).',
     audioGateOff: 'Off',
+    bgAudioAdd: 'Add background audio',
+    bgAudioRemove: 'Remove background audio',
+    bgAudioVolume: 'Background audio volume',
+    bgAudioMute: 'Mute background audio',
+    bgAudioLoading: 'Loading background audio…',
+    bgAudioInvalid: 'Could not load this audio file.',
+    bgAudioDragHint: 'Drag to move · drag handles to trim',
     exportSection: 'Export',
     exportNow: 'Export video',
     exporting: 'Exporting',
@@ -307,6 +314,13 @@ export const TRANSLATIONS: Record<UiLang, Record<string, string>> = {
     audioGate: 'Puerta de ruido',
     audioGateHint: 'Silencia el audio por debajo del umbral (mantiene la voz, baja el ruido).',
     audioGateOff: 'Apagada',
+    bgAudioAdd: 'Agregar audio de fondo',
+    bgAudioRemove: 'Quitar audio de fondo',
+    bgAudioVolume: 'Volumen del audio de fondo',
+    bgAudioMute: 'Silenciar audio de fondo',
+    bgAudioLoading: 'Cargando audio de fondo…',
+    bgAudioInvalid: 'No se pudo cargar este archivo de audio.',
+    bgAudioDragHint: 'Arrastrá para mover · arrastrá los bordes para recortar',
     exportSection: 'Exportar',
     exportNow: 'Exportar video',
     exporting: 'Exportando',
@@ -618,6 +632,20 @@ function modelToBackend(m: TranscribeModel): { engine: 'local' | 'openai'; whisp
   return { engine: 'local', whisper: 'medium' };
 }
 
+type BgAudioState = {
+  path: string;
+  url: string;
+  duration: number;
+  peaks: number[];
+  offset: number;
+  inPoint: number;
+  outPoint: number;
+  volumeDb: number;
+  muted: boolean;
+};
+
+type BgAudioPersist = Omit<BgAudioState, 'url'>;
+
 type ProjectState = {
   silenceRegions: SilenceRegion[];
   thresholdDb: number;
@@ -653,14 +681,193 @@ type ProjectState = {
   volume?: number;
   muted?: boolean;
   playbackRate?: number;
+  bgAudio?: BgAudioPersist | null;
 };
 
+function bgAudioToPersist(b: BgAudioState): BgAudioPersist {
+  const { url: _url, ...rest } = b;
+  return rest;
+}
+
+type BgAudioTrackLabels = {
+  add: string;
+  remove: string;
+  loading: string;
+  dragHint: string;
+};
+
+function BgAudioTrack(props: {
+  bgAudio: BgAudioState | null;
+  videoDuration: number;
+  loading: boolean;
+  onAdd: () => void;
+  onRemove: () => void;
+  onChange: (patch: Partial<BgAudioState>) => void;
+  onDropFile: (e: React.DragEvent) => void;
+  labels: BgAudioTrackLabels;
+}) {
+  const { bgAudio, videoDuration, loading, onAdd, onRemove, onChange, onDropFile, labels } = props;
+  const [dropOver, setDropOver] = useState(false);
+  const trackRef = useRef<HTMLDivElement>(null);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const [dragKind, setDragKind] = useState<null | 'move' | 'in' | 'out'>(null);
+
+  useEffect(() => {
+    const c = canvasRef.current;
+    if (!c || !bgAudio) return;
+    const dpr = window.devicePixelRatio || 1;
+    const w = c.clientWidth;
+    const h = c.clientHeight;
+    if (w <= 0 || h <= 0) return;
+    c.width = Math.floor(w * dpr);
+    c.height = Math.floor(h * dpr);
+    const ctx = c.getContext('2d');
+    if (!ctx) return;
+    ctx.scale(dpr, dpr);
+    ctx.clearRect(0, 0, w, h);
+    const peaks = bgAudio.peaks;
+    if (!peaks || peaks.length === 0) return;
+    const dur = bgAudio.duration || 1;
+    const startBin = Math.floor((bgAudio.inPoint / dur) * peaks.length);
+    const endBin = Math.ceil((bgAudio.outPoint / dur) * peaks.length);
+    const count = Math.max(1, endBin - startBin);
+    const mid = h / 2;
+    ctx.fillStyle = 'rgba(120, 200, 255, 0.75)';
+    const barW = Math.max(1, w / count);
+    for (let i = 0; i < count; i++) {
+      const p = peaks[startBin + i] ?? 0;
+      const bh = Math.max(1, p * (h - 4));
+      ctx.fillRect(i * barW, mid - bh / 2, Math.max(1, barW - 0.5), bh);
+    }
+  }, [bgAudio?.peaks, bgAudio?.inPoint, bgAudio?.outPoint, bgAudio?.duration]);
+
+  useEffect(() => {
+    if (!dragKind || !bgAudio || !trackRef.current) return;
+    const trackEl = trackRef.current;
+    const startRect = trackEl.getBoundingClientRect();
+    const trackW = startRect.width;
+    const startBg = { ...bgAudio };
+
+    function pxToSec(px: number) { return (px / Math.max(1, trackW)) * videoDuration; }
+
+    function onMove(ev: MouseEvent) {
+      const dx = ev.clientX - startMouseX;
+      const dSec = pxToSec(dx);
+      if (dragKind === 'move') {
+        const clipLen = startBg.outPoint - startBg.inPoint;
+        let newOffset = startBg.offset + dSec;
+        newOffset = Math.max(0, Math.min(Math.max(0, videoDuration - 0.05), newOffset));
+        if (newOffset + clipLen > videoDuration) {
+          newOffset = Math.max(0, videoDuration - clipLen);
+        }
+        onChange({ offset: newOffset });
+      } else if (dragKind === 'in') {
+        let newIn = startBg.inPoint + dSec;
+        newIn = Math.max(0, Math.min(startBg.outPoint - 0.1, newIn));
+        const delta = newIn - startBg.inPoint;
+        let newOffset = startBg.offset + delta;
+        newOffset = Math.max(0, newOffset);
+        onChange({ inPoint: newIn, offset: newOffset });
+      } else if (dragKind === 'out') {
+        let newOut = startBg.outPoint + dSec;
+        newOut = Math.max(startBg.inPoint + 0.1, Math.min(startBg.duration, newOut));
+        const maxOut = startBg.inPoint + (videoDuration - startBg.offset);
+        if (newOut > maxOut) newOut = maxOut;
+        onChange({ outPoint: newOut });
+      }
+    }
+    function onUp() { setDragKind(null); }
+    const startMouseX = (window as any).__bgAudioStartX ?? 0;
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+    return () => {
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onUp);
+    };
+  }, [dragKind, bgAudio?.path, bgAudio?.inPoint, bgAudio?.outPoint, bgAudio?.offset, bgAudio?.duration, videoDuration]);
+
+  function startDrag(kind: 'move' | 'in' | 'out', e: React.MouseEvent) {
+    e.preventDefault();
+    e.stopPropagation();
+    (window as any).__bgAudioStartX = e.clientX;
+    setDragKind(kind);
+  }
+
+  const dropHandlers = {
+    onDragOver: (e: React.DragEvent) => { e.preventDefault(); e.stopPropagation(); if (!dropOver) setDropOver(true); },
+    onDragEnter: (e: React.DragEvent) => { e.preventDefault(); e.stopPropagation(); setDropOver(true); },
+    onDragLeave: (e: React.DragEvent) => { e.preventDefault(); e.stopPropagation(); setDropOver(false); },
+    onDrop: (e: React.DragEvent) => { setDropOver(false); onDropFile(e); },
+  };
+
+  if (!bgAudio) {
+    return (
+      <div
+        className={'audio-strip-bgtrack is-empty' + (dropOver ? ' is-drop-over' : '')}
+        {...dropHandlers}
+      >
+        <button
+          type="button"
+          className="audio-strip-bgadd"
+          onClick={onAdd}
+          disabled={loading}
+        >
+          {loading ? labels.loading : `+ ${labels.add}`}
+        </button>
+      </div>
+    );
+  }
+
+  const clipLen = Math.max(0, bgAudio.outPoint - bgAudio.inPoint);
+  const leftPct = (Math.max(0, bgAudio.offset) / Math.max(0.001, videoDuration)) * 100;
+  const widthPct = (clipLen / Math.max(0.001, videoDuration)) * 100;
+
+  return (
+    <div
+      className={'audio-strip-bgtrack' + (dropOver ? ' is-drop-over' : '')}
+      ref={trackRef}
+      {...dropHandlers}
+    >
+      <div
+        className={'audio-strip-bgclip' + (dragKind ? ' is-dragging' : '')}
+        style={{ left: `${leftPct}%`, width: `${widthPct}%` }}
+        onMouseDown={(e) => startDrag('move', e)}
+        title={labels.dragHint}
+      >
+        <canvas ref={canvasRef} className="audio-strip-bgclip-canvas" />
+        <div
+          className="audio-strip-bgclip-handle is-left"
+          onMouseDown={(e) => startDrag('in', e)}
+        />
+        <div
+          className="audio-strip-bgclip-handle is-right"
+          onMouseDown={(e) => startDrag('out', e)}
+        />
+        <button
+          type="button"
+          className="audio-strip-bgclip-remove"
+          title={labels.remove}
+          onMouseDown={(e) => e.stopPropagation()}
+          onClick={(e) => { e.stopPropagation(); onRemove(); }}
+        >×</button>
+      </div>
+    </div>
+  );
+}
+
 const VIDEO_EXTENSIONS = ['mp4', 'mov', 'mkv', 'webm', 'avi', 'm4v'];
+const AUDIO_EXTENSIONS = ['mp3', 'wav', 'm4a', 'aac', 'flac', 'ogg', 'opus', 'wma'];
 
 export function isVideoPath(filePath: string): boolean {
   const dot = filePath.lastIndexOf('.');
   if (dot < 0) return false;
   return VIDEO_EXTENSIONS.includes(filePath.slice(dot + 1).toLowerCase());
+}
+
+export function isAudioPath(filePath: string): boolean {
+  const dot = filePath.lastIndexOf('.');
+  if (dot < 0) return false;
+  return AUDIO_EXTENSIONS.includes(filePath.slice(dot + 1).toLowerCase());
 }
 
 function projectKey(videoPath: string): string {
@@ -897,6 +1104,10 @@ export default function Editor(props: EditorProps) {
   const [volumeDb, setVolumeDb] = useState<number>(0);
   const [noiseGateDb, setNoiseGateDb] = useState<number>(-40);
   const [noiseGateEnabled, setNoiseGateEnabled] = useState<boolean>(false);
+
+  const [bgAudio, setBgAudio] = useState<BgAudioState | null>(null);
+  const [bgAudioLoading, setBgAudioLoading] = useState(false);
+  const bgAudioRef = useRef<HTMLAudioElement | null>(null);
 
   const audioCtxRef = useRef<AudioContext | null>(null);
   const audioSourceRef = useRef<MediaElementAudioSourceNode | null>(null);
@@ -1459,6 +1670,136 @@ export default function Editor(props: EditorProps) {
     }
   }, [videoUrl]);
 
+  async function loadBgAudioFromPath(picked: string) {
+    if (!picked) return;
+    setBgAudioLoading(true);
+    try {
+      const res = await window.subbi.extractPeaks({ videoPath: picked, targetBins: 4000, binsPerSecond: 40 });
+      const duration = res.duration > 0 ? res.duration : 0;
+      if (!duration) {
+        setProc({ phase: 'error', message: t('bgAudioInvalid') });
+        return;
+      }
+      setBgAudio({
+        path: picked,
+        url: 'file:///' + picked.replace(/\\/g, '/'),
+        duration,
+        peaks: res.peaks,
+        offset: 0,
+        inPoint: 0,
+        outPoint: duration,
+        volumeDb: 0,
+        muted: false,
+      });
+    } catch {
+      setProc({ phase: 'error', message: t('bgAudioInvalid') });
+    } finally {
+      setBgAudioLoading(false);
+    }
+  }
+
+  async function importBgAudio() {
+    const picked = await window.subbi.pickAudio?.();
+    if (!picked) return;
+    await loadBgAudioFromPath(picked);
+  }
+
+  function handleBgAudioDrop(e: React.DragEvent) {
+    e.preventDefault();
+    e.stopPropagation();
+    const files = Array.from(e.dataTransfer?.files ?? []);
+    for (const f of files) {
+      const p = window.subbi.getPathForFile?.(f) || '';
+      if (p && isAudioPath(p)) {
+        loadBgAudioFromPath(p);
+        return;
+      }
+    }
+    setProc({ phase: 'error', message: t('bgAudioInvalid') });
+  }
+
+  function updateBgAudio(patch: Partial<BgAudioState>) {
+    setBgAudio(prev => (prev ? { ...prev, ...patch } : prev));
+  }
+
+  function removeBgAudio() {
+    setBgAudio(null);
+  }
+
+  useEffect(() => {
+    const a = bgAudioRef.current;
+    if (!a || !bgAudio) return;
+    a.volume = Math.max(0, Math.min(1, Math.pow(10, bgAudio.volumeDb / 20)));
+    a.muted = bgAudio.muted;
+  }, [bgAudio?.volumeDb, bgAudio?.muted]);
+
+  useEffect(() => {
+    const a = bgAudioRef.current;
+    const v = videoRef.current;
+    if (!a || !v || !bgAudio) return;
+    a.playbackRate = v.playbackRate || 1;
+    const clipLen = Math.max(0, bgAudio.outPoint - bgAudio.inPoint);
+
+    const computeBgTime = (videoTime: number) => bgAudio.inPoint + (videoTime - bgAudio.offset);
+
+    const syncTime = () => {
+      const want = computeBgTime(v.currentTime);
+      const inRange = v.currentTime >= bgAudio.offset && v.currentTime < bgAudio.offset + clipLen;
+      if (!inRange) {
+        if (!a.paused) a.pause();
+        return;
+      }
+      if (Math.abs(a.currentTime - want) > 0.15) {
+        try { a.currentTime = Math.max(0, Math.min(bgAudio.outPoint - 0.001, want)); } catch {}
+      }
+      if (!v.paused && a.paused) {
+        a.play().catch(() => {});
+      } else if (v.paused && !a.paused) {
+        a.pause();
+      }
+    };
+
+    const onPlay = () => syncTime();
+    const onPause = () => { try { a.pause(); } catch {} };
+    const onSeeked = () => syncTime();
+    const onSeeking = () => { try { a.pause(); } catch {} };
+    const onRate = () => { a.playbackRate = v.playbackRate || 1; };
+    const onTime = () => {
+      const inRange = v.currentTime >= bgAudio.offset && v.currentTime < bgAudio.offset + clipLen;
+      if (!inRange) {
+        if (!a.paused) a.pause();
+        return;
+      }
+      if (v.paused) return;
+      if (a.paused) {
+        try { a.currentTime = Math.max(0, Math.min(bgAudio.outPoint - 0.001, computeBgTime(v.currentTime))); } catch {}
+        a.play().catch(() => {});
+      } else {
+        const want = computeBgTime(v.currentTime);
+        if (Math.abs(a.currentTime - want) > 0.3) {
+          try { a.currentTime = Math.max(0, Math.min(bgAudio.outPoint - 0.001, want)); } catch {}
+        }
+      }
+    };
+
+    v.addEventListener('play', onPlay);
+    v.addEventListener('pause', onPause);
+    v.addEventListener('seeked', onSeeked);
+    v.addEventListener('seeking', onSeeking);
+    v.addEventListener('ratechange', onRate);
+    v.addEventListener('timeupdate', onTime);
+    syncTime();
+    return () => {
+      v.removeEventListener('play', onPlay);
+      v.removeEventListener('pause', onPause);
+      v.removeEventListener('seeked', onSeeked);
+      v.removeEventListener('seeking', onSeeking);
+      v.removeEventListener('ratechange', onRate);
+      v.removeEventListener('timeupdate', onTime);
+      try { a.pause(); } catch {}
+    };
+  }, [bgAudio?.url, bgAudio?.offset, bgAudio?.inPoint, bgAudio?.outPoint, videoUrl]);
+
   useEffect(() => {
     const pv = previewVideoRef.current;
     if (!pv || !hoverPreview) return;
@@ -1599,6 +1940,7 @@ export default function Editor(props: EditorProps) {
         srtPath, rawCues, wordsTs, style, language, model,
         splitMarkers, cropByZone, cropApplyToAll, styleByZone, styleApplyToAll, excludedSegments,
         currentTime, timelineZoom, previewZoom, volume, muted, playbackRate,
+        bgAudio: bgAudio ? bgAudioToPersist(bgAudio) : null,
       });
     }
     setVideoPath(filePath);
@@ -1650,6 +1992,14 @@ export default function Editor(props: EditorProps) {
         muted: saved.muted,
         playbackRate: saved.playbackRate,
       };
+      if (saved.bgAudio) {
+        setBgAudio({
+          ...saved.bgAudio,
+          url: 'file:///' + saved.bgAudio.path.replace(/\\/g, '/'),
+        });
+      } else {
+        setBgAudio(null);
+      }
     } else {
       setSilenceRegions([]);
       setMeanVolumeDb(null);
@@ -1676,6 +2026,7 @@ export default function Editor(props: EditorProps) {
       setTimelineZoom(1);
       setPreviewZoom(1);
       pendingPlaybackRef.current = null;
+      setBgAudio(null);
     }
     setSelectedMarker(null);
   }
@@ -1691,6 +2042,7 @@ export default function Editor(props: EditorProps) {
         srtPath, rawCues, wordsTs, style, language, model,
         splitMarkers, cropByZone, cropApplyToAll, styleByZone, styleApplyToAll, excludedSegments,
         currentTime, timelineZoom, previewZoom, volume, muted, playbackRate,
+        bgAudio: bgAudio ? bgAudioToPersist(bgAudio) : null,
       },
     };
   });
@@ -1711,7 +2063,7 @@ export default function Editor(props: EditorProps) {
       cropEnabled, crop, cropBgColor, aspectId, saturation, opacity, opacityBgColor, volumeDb, noiseGateDb, noiseGateEnabled,
       srtPath, rawCues, style, language, model,
       splitMarkers, cropByZone, cropApplyToAll, styleByZone, styleApplyToAll, excludedSegments,
-      currentTime, timelineZoom, previewZoom, volume, muted, playbackRate]);
+      currentTime, timelineZoom, previewZoom, volume, muted, playbackRate, bgAudio]);
 
   useEffect(() => {
     return () => {
@@ -1878,7 +2230,8 @@ export default function Editor(props: EditorProps) {
     const hasSplits = splitMarkers.length > 0;
     const hasSaturation = Math.abs(saturation - 100) > 0.5;
     const hasOpacity = opacity < 99.5;
-    if (!hasSilence && !hasSubs && !hasCrop && !hasVolume && !hasGate && !hasSplits && !hasSaturation && !hasOpacity) {
+    const hasBgAudio = !!bgAudio && !bgAudio.muted && (bgAudio.outPoint - bgAudio.inPoint) > 0.02;
+    if (!hasSilence && !hasSubs && !hasCrop && !hasVolume && !hasGate && !hasSplits && !hasSaturation && !hasOpacity && !hasBgAudio) {
       setProc({ phase: 'error', message: t('nothingToExport') });
       return;
     }
@@ -1947,6 +2300,33 @@ export default function Editor(props: EditorProps) {
         const hasEditedCues = !!(rawCues && rawCues.some(c => c.edited));
         const segStyle = styleForTime(seg.start);
         const burnStyle = (hasEditedCues || useWordAlignedSrt) ? { ...segStyle, maxWords: 0 } : segStyle;
+        let segBg: SubbiBgAudioExport | null = null;
+        if (hasBgAudio && bgAudio) {
+          const clipStartInVideo = bgAudio.offset;
+          const clipEndInVideo = bgAudio.offset + (bgAudio.outPoint - bgAudio.inPoint);
+          const overlapStart = Math.max(seg.start, clipStartInVideo);
+          const overlapEnd = Math.min(seg.end, clipEndInVideo);
+          if (overlapEnd - overlapStart > 0.02) {
+            const mapToOutput = (tAbs: number): number => {
+              if (!useKeep || segKeep.length === 0) return Math.max(0, tAbs - seg.start);
+              let acc = 0;
+              for (const r of segKeep) {
+                if (tAbs < r.start) return acc;
+                if (tAbs < r.end) return acc + (tAbs - r.start);
+                acc += r.end - r.start;
+              }
+              return acc;
+            };
+            const outOffset = mapToOutput(overlapStart);
+            segBg = {
+              path: bgAudio.path,
+              offset: outOffset,
+              inPoint: bgAudio.inPoint + Math.max(0, overlapStart - clipStartInVideo),
+              outPoint: bgAudio.inPoint + (overlapEnd - clipStartInVideo),
+              volumeDb: bgAudio.volumeDb,
+            };
+          }
+        }
         const segOut = await window.subbi.exportVideo({
           videoPath,
           keepRanges: useKeep ? segKeep : undefined,
@@ -1962,6 +2342,7 @@ export default function Editor(props: EditorProps) {
           outputPath,
           videoWidth: videoW || undefined,
           videoHeight: videoH || undefined,
+          bgAudio: segBg,
         });
         outputs.push(segOut);
         setProc(p => p.phase === 'exporting'
@@ -2383,6 +2764,14 @@ export default function Editor(props: EditorProps) {
                 onLoadedMetadata={() => bumpVideoEl(n => n + 1)}
                 style={videoStyle}
               />
+              {bgAudio && (
+                <audio
+                  ref={bgAudioRef}
+                  src={bgAudio.url}
+                  preload="auto"
+                  style={{ display: 'none' }}
+                />
+              )}
               <div
                 className={
                   'subtitle-overlay'
@@ -2681,6 +3070,23 @@ export default function Editor(props: EditorProps) {
                       theme={resolvedTheme}
                     />
                   </div>
+                  {videoDuration > 0 && (
+                    <BgAudioTrack
+                      bgAudio={bgAudio}
+                      videoDuration={videoDuration}
+                      loading={bgAudioLoading}
+                      onAdd={importBgAudio}
+                      onRemove={removeBgAudio}
+                      onChange={updateBgAudio}
+                      onDropFile={handleBgAudioDrop}
+                      labels={{
+                        add: t('bgAudioAdd'),
+                        remove: t('bgAudioRemove'),
+                        loading: t('bgAudioLoading'),
+                        dragHint: t('bgAudioDragHint'),
+                      }}
+                    />
+                  )}
                 </div>
               </div>
               {peaks === null && (
@@ -2707,6 +3113,29 @@ export default function Editor(props: EditorProps) {
                 />
                 <span className="audio-fader-num">{volumeDb > 0 ? '+' : ''}{volumeDb}</span>
               </div>
+              {bgAudio && (
+                <div className={'audio-fader' + (bgAudio.muted ? ' is-off' : '')}>
+                  <button
+                    type="button"
+                    className={'audio-fader-key audio-fader-key-btn has-tip' + (bgAudio.muted ? '' : ' is-on')}
+                    onClick={() => updateBgAudio({ muted: !bgAudio.muted })}
+                    disabled={!videoPath || isEditBusy}
+                    data-tip={`${t('bgAudioVolume')}: ${bgAudio.muted ? t('audioGateOff') : `${bgAudio.volumeDb > 0 ? '+' : ''}${bgAudio.volumeDb} dB`}`}
+                  >B</button>
+                  <input
+                    type="range"
+                    min={-30} max={30} step={1}
+                    value={bgAudio.volumeDb}
+                    disabled={!videoPath || isEditBusy || bgAudio.muted}
+                    onChange={e => updateBgAudio({ volumeDb: +e.target.value })}
+                    className="pr-range pr-range-v"
+                    style={rangePct(bgAudio.volumeDb, -30, 30)}
+                  />
+                  <span className="audio-fader-num">
+                    {bgAudio.muted ? '–' : `${bgAudio.volumeDb > 0 ? '+' : ''}${bgAudio.volumeDb}`}
+                  </span>
+                </div>
+              )}
               <div className={'audio-fader' + (noiseGateEnabled ? '' : ' is-off')}>
                 <button
                   type="button"

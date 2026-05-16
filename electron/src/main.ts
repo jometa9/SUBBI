@@ -100,6 +100,20 @@ ipcMain.handle('subbi:pickVideo', async () => {
   return r.filePaths[0];
 });
 
+ipcMain.handle('subbi:pickAudio', async () => {
+  if (!mainWindow) return null;
+  const r = await dialog.showOpenDialog(mainWindow, {
+    title: 'Elegir audio',
+    properties: ['openFile'],
+    filters: [
+      { name: 'Audio', extensions: ['mp3', 'wav', 'm4a', 'aac', 'flac', 'ogg', 'opus', 'wma'] },
+      { name: 'All files', extensions: ['*'] },
+    ],
+  });
+  if (r.canceled || r.filePaths.length === 0) return null;
+  return r.filePaths[0];
+});
+
 ipcMain.handle('subbi:checkModel', async (_e, model: WhisperModel) => {
   return hasModel(model);
 });

@@ -31,8 +31,17 @@ type SubbiProgressEvent =
   | { kind: 'export'; pct: number; line: string }
   | { kind: 'modelDownload'; model: 'tiny' | 'medium'; pct: number; line: string };
 
+type SubbiBgAudioExport = {
+  path: string;
+  offset: number;
+  inPoint: number;
+  outPoint: number;
+  volumeDb: number;
+};
+
 interface SubbiAPI {
   pickVideo(): Promise<string | null>;
+  pickAudio(): Promise<string | null>;
   pathExists(path: string): Promise<boolean>;
   getPathForFile(file: File): string;
   transcribe(opts: {
@@ -65,6 +74,7 @@ interface SubbiAPI {
     outputPath?: string;
     videoWidth?: number;
     videoHeight?: number;
+    bgAudio?: SubbiBgAudioExport | null;
   }): Promise<string>;
   cancelExport(): Promise<boolean>;
   extractPeaks(opts: { videoPath: string; targetBins?: number; binsPerSecond?: number }):
