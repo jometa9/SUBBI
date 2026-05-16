@@ -1,7 +1,7 @@
 {
   "name": "subbi",
   "productName": "Subbi",
-  "version": "0.1.7",
+  "version": "0.1.8",
   "description": "Drag a video, get burned-in subtitles. Local Whisper.",
   "private": true,
   "main": "electron/dist/main.js",
