@@ -41,7 +41,7 @@ interface SubbiAPI {
     model: 'tiny' | 'medium';
     engine?: 'local' | 'openai';
     apiKey?: string;
-  }): Promise<{ srtPath: string; srt: string }>;
+  }): Promise<{ srtPath: string; srt: string; words?: { word: string; start: number; end: number }[] }>;
   checkModel(model: 'tiny' | 'medium'): Promise<boolean>;
   downloadModel(model: 'tiny' | 'medium'): Promise<boolean>;
   burn(opts: { videoPath: string; srtPath: string; style: SubbiStyle }):

@@ -19,9 +19,16 @@ export interface TranscribeOptions {
   apiKey?: string;
 }
 
+export interface TranscribeWord {
+  word: string;
+  start: number;
+  end: number;
+}
+
 export interface TranscribeResult {
   srtPath: string;
   srt: string;
+  words?: TranscribeWord[];
 }
 
 function resourceRoot(): string {

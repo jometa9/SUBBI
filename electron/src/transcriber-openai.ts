@@ -11,14 +11,22 @@ export interface OpenAITranscribeOptions {
   apiKey: string;
 }
 
+export interface OpenAIWord {
+  word: string;
+  start: number;
+  end: number;
+}
+
 export interface OpenAITranscribeResult {
   srtPath: string;
   srt: string;
+  words?: OpenAIWord[];
 }
 
 const OPENAI_API_URL = 'https://api.openai.com/v1/audio/transcriptions';
 const OPENAI_MODEL = 'whisper-1';
 const MAX_CHUNK_BYTES = 24 * 1024 * 1024;
+const MAX_CHUNK_SECONDS = 10 * 60;
 const AUDIO_BITRATE_KBPS = 32;
 
 function ffprobeDuration(ffmpeg: string, input: string): Promise<number> {
@@ -81,12 +89,13 @@ function formatSrtTime(totalSec: number): string {
 }
 
 type Segment = { start: number; end: number; text: string };
+type CallResult = { segments: Segment[]; words: OpenAIWord[] };
 
 async function callOpenAI(
   apiKey: string,
   audioPath: string,
   language: string,
-): Promise<Segment[]> {
+): Promise<CallResult> {
   const data = fs.readFileSync(audioPath);
   const filename = path.basename(audioPath);
   const blob = new Blob([data], { type: 'audio/mpeg' });
@@ -95,17 +104,44 @@ async function callOpenAI(
   form.append('model', OPENAI_MODEL);
   form.append('response_format', 'verbose_json');
   form.append('timestamp_granularities[]', 'segment');
+  form.append('timestamp_granularities[]', 'word');
   if (language && language !== 'auto') form.append('language', language);
 
-  const res = await fetch(OPENAI_API_URL, {
-    method: 'POST',
-    headers: { Authorization: `Bearer ${apiKey}` },
-    body: form as any,
+  console.log('[openai-transcribe] request', {
+    file: filename,
+    bytes: data.length,
+    model: OPENAI_MODEL,
+    language: language || 'auto',
+    apiKeyTail: apiKey ? `…${apiKey.slice(-4)}` : '(missing)',
   });
+
+  let res: Response;
+  try {
+    res = await fetch(OPENAI_API_URL, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${apiKey}` },
+      body: form as any,
+    });
+  } catch (e: any) {
+    console.error('[openai-transcribe] fetch failed', {
+      file: filename,
+      name: e?.name,
+      message: e?.message,
+      cause: e?.cause,
+    });
+    throw e;
+  }
 
   if (!res.ok) {
     let detail = '';
     try { detail = await res.text(); } catch {}
+    console.error('[openai-transcribe] non-OK response', {
+      file: filename,
+      bytes: data.length,
+      status: res.status,
+      statusText: res.statusText,
+      body: detail.slice(0, 2000),
+    });
     if (res.status === 401) throw new Error('evt:err.openaiAuth');
     if (res.status === 429) throw new Error('evt:err.openaiRate');
     throw new Error('evt:err.openaiRequest' + (detail ? `:${res.status}` : ''));
@@ -113,13 +149,24 @@ async function callOpenAI(
 
   const json: any = await res.json();
   const segs: any[] = Array.isArray(json?.segments) ? json.segments : [];
-  return segs
+  const segments = segs
     .map(s => ({
       start: Number(s.start) || 0,
       end: Number(s.end) || 0,
       text: String(s.text || '').trim(),
     }))
     .filter(s => s.text.length > 0 && s.end > s.start);
+
+  const wordsRaw: any[] = Array.isArray(json?.words) ? json.words : [];
+  const words: OpenAIWord[] = wordsRaw
+    .map(w => ({
+      word: String(w.word || '').trim(),
+      start: Number(w.start) || 0,
+      end: Number(w.end) || 0,
+    }))
+    .filter(w => w.word.length > 0 && w.end >= w.start);
+
+  return { segments, words };
 }
 
 function buildSrt(segments: Segment[]): string {
@@ -166,11 +213,12 @@ export async function transcribeOpenAI(
     const size = fs.statSync(fullMp3).size;
     const chunks: { path: string; offset: number }[] = [];
 
-    if (size <= MAX_CHUNK_BYTES) {
+    if (size <= MAX_CHUNK_BYTES && totalSec <= MAX_CHUNK_SECONDS) {
       chunks.push({ path: fullMp3, offset: 0 });
     } else {
       const bytesPerSec = (AUDIO_BITRATE_KBPS * 1000) / 8;
-      const chunkSec = Math.max(60, Math.floor((MAX_CHUNK_BYTES / bytesPerSec) * 0.9));
+      const bytesChunkSec = Math.floor((MAX_CHUNK_BYTES / bytesPerSec) * 0.9);
+      const chunkSec = Math.max(60, Math.min(MAX_CHUNK_SECONDS, bytesChunkSec));
       let offset = 0;
       let idx = 0;
       while (offset < totalSec) {
@@ -186,14 +234,22 @@ export async function transcribeOpenAI(
 
     onProgress(25, 'evt:transcribe.starting');
     const allSegments: Segment[] = [];
+    const allWords: OpenAIWord[] = [];
     for (let i = 0; i < chunks.length; i++) {
       const c = chunks[i];
-      const segs = await callOpenAI(opts.apiKey, c.path, opts.language);
+      const { segments: segs, words: ws } = await callOpenAI(opts.apiKey, c.path, opts.language);
       for (const s of segs) {
         allSegments.push({
           start: s.start + c.offset,
           end: s.end + c.offset,
           text: s.text,
+        });
+      }
+      for (const w of ws) {
+        allWords.push({
+          word: w.word,
+          start: w.start + c.offset,
+          end: w.end + c.offset,
         });
       }
       const pct = 25 + Math.round(((i + 1) / chunks.length) * 70);
@@ -213,7 +269,7 @@ export async function transcribeOpenAI(
     fs.writeFileSync(finalSrt, srt, 'utf8');
 
     onProgress(100, 'evt:transcribe.done');
-    return { srtPath: finalSrt, srt };
+    return { srtPath: finalSrt, srt, words: allWords };
   } finally {
     try { fs.unlinkSync(fullMp3); } catch {}
     for (const p of chunkPaths) {

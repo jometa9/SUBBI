@@ -7,6 +7,7 @@ import ColorPicker from './ColorPicker';
 const IS_MAC = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform);
 
 type Cue = { start: number; end: number; text: string; edited?: boolean };
+type WordTs = { word: string; start: number; end: number };
 
 type SubtitleStyle = {
   fontName: string;
@@ -503,6 +504,38 @@ function formatSrt(cues: Cue[]): string {
     .join('\n');
 }
 
+const WORD_GAP_BREAK_SEC = 0.5;
+const SENTENCE_END_RE = /[.!?…¿¡]$/;
+
+function groupByWordTimestamps(words: WordTs[], maxWords: number): Cue[] {
+  if (!words || words.length === 0) return [];
+  const cap = maxWords && maxWords > 0 ? maxWords : Infinity;
+  const out: Cue[] = [];
+  let bucket: WordTs[] = [];
+
+  const flush = () => {
+    if (bucket.length === 0) return;
+    out.push({
+      start: bucket[0].start,
+      end: bucket[bucket.length - 1].end,
+      text: bucket.map(w => w.word).join(' ').replace(/\s+([,.;:!?…])/g, '$1'),
+    });
+    bucket = [];
+  };
+
+  for (let i = 0; i < words.length; i++) {
+    const w = words[i];
+    const prev = bucket[bucket.length - 1];
+    const gap = prev ? w.start - prev.end : 0;
+    if (prev && gap > WORD_GAP_BREAK_SEC) flush();
+    bucket.push(w);
+    if (bucket.length >= cap) { flush(); continue; }
+    if (SENTENCE_END_RE.test(w.word)) flush();
+  }
+  flush();
+  return out;
+}
+
 function resegmentByWords(cues: Cue[], maxWords: number): Cue[] {
   if (!maxWords || maxWords <= 0) return cues;
   const out: Cue[] = [];
@@ -599,6 +632,7 @@ type ProjectState = {
   noiseGateEnabled: boolean;
   srtPath: string | null;
   rawCues: Cue[] | null;
+  wordsTs?: WordTs[] | null;
   style: SubtitleStyle;
   language: string;
   model: TranscribeModel;
@@ -798,6 +832,7 @@ export default function Editor(props: EditorProps) {
 
   const [srtPath, setSrtPath] = useState<string | null>(null);
   const [rawCues, setRawCues] = useState<Cue[] | null>(null);
+  const [wordsTs, setWordsTs] = useState<WordTs[] | null>(null);
   const [editingCue, setEditingCue] = useState<Cue | null>(null);
   const [editingText, setEditingText] = useState<string>('');
 
@@ -1241,10 +1276,14 @@ export default function Editor(props: EditorProps) {
   const exportCancelRef = useRef(false);
   const [cancellingExport, setCancellingExport] = useState(false);
 
-  const cues = useMemo(
-    () => rawCues ? resegmentByWords(rawCues, style.maxWords) : null,
-    [rawCues, style.maxWords]
-  );
+  const cues = useMemo(() => {
+    if (!rawCues) return null;
+    const hasEdits = rawCues.some(c => c.edited);
+    if (wordsTs && wordsTs.length > 0 && !hasEdits) {
+      return groupByWordTimestamps(wordsTs, style.maxWords);
+    }
+    return resegmentByWords(rawCues, style.maxWords);
+  }, [rawCues, wordsTs, style.maxWords]);
 
   const activeCue = useMemo(() => {
     if (!cues) return null;
@@ -1546,7 +1585,7 @@ export default function Editor(props: EditorProps) {
       saveProject(videoPath, {
         silenceRegions, thresholdDb, autoThreshold, meanVolumeDb, minSilenceDur,
         cropEnabled, crop, cropBgColor, aspectId, saturation, opacity, opacityBgColor, volumeDb, noiseGateDb, noiseGateEnabled,
-        srtPath, rawCues, style, language, model,
+        srtPath, rawCues, wordsTs, style, language, model,
         splitMarkers, cropByZone, styleByZone, styleApplyToAll, excludedSegments,
         currentTime, timelineZoom, previewZoom, volume, muted, playbackRate,
       });
@@ -1578,6 +1617,7 @@ export default function Editor(props: EditorProps) {
       setNoiseGateEnabled(saved.noiseGateEnabled ?? false);
       setSrtPath(saved.srtPath ?? null);
       setRawCues(saved.rawCues ?? null);
+      setWordsTs(saved.wordsTs ?? null);
       setSplitMarkers(saved.splitMarkers ?? []);
       setCropByZone(saved.cropByZone ?? {});
       setStyleByZone(saved.styleByZone ?? {});
@@ -1603,6 +1643,7 @@ export default function Editor(props: EditorProps) {
       setMeanVolumeDb(null);
       setSrtPath(null);
       setRawCues(null);
+      setWordsTs(null);
       setCropEnabled(false);
       setCrop(DEFAULT_CROP);
       setCropBgColor('black');
@@ -1634,7 +1675,7 @@ export default function Editor(props: EditorProps) {
       state: {
         silenceRegions, thresholdDb, autoThreshold, meanVolumeDb, minSilenceDur,
         cropEnabled, crop, cropBgColor, aspectId, saturation, opacity, opacityBgColor, volumeDb, noiseGateDb, noiseGateEnabled,
-        srtPath, rawCues, style, language, model,
+        srtPath, rawCues, wordsTs, style, language, model,
         splitMarkers, cropByZone, styleByZone, styleApplyToAll, excludedSegments,
         currentTime, timelineZoom, previewZoom, volume, muted, playbackRate,
       },
@@ -1793,6 +1834,7 @@ export default function Editor(props: EditorProps) {
       });
       setSrtPath(r.srtPath);
       setRawCues(parseSrt(r.srt));
+      setWordsTs(r.words && r.words.length > 0 ? r.words : null);
       setProc({ phase: 'idle' });
     } catch (err: any) {
       setProc({ phase: 'error', message: tEvt(String(err?.message || err)) || String(err?.message || err) });
@@ -1865,6 +1907,15 @@ export default function Editor(props: EditorProps) {
     setProc({ phase: 'exporting', pct: 0, log: '' });
     try {
       const outputs: string[] = [];
+      let burnSrtPath = srtPath;
+      const useWordAlignedSrt = hasSubs && wordsTs && wordsTs.length > 0 && !!cues;
+      if (useWordAlignedSrt && srtPath) {
+        const alignedPath = srtPath.replace(/\.srt$/i, '') + '.aligned.srt';
+        try {
+          await window.subbi.writeSrt({ srtPath: alignedPath, content: formatSrt(cues!) });
+          burnSrtPath = alignedPath;
+        } catch {}
+      }
       const total = includedBounds.length;
       for (let i = 0; i < total; i++) {
         if (exportCancelRef.current) throw new Error('evt:export.cancelled');
@@ -1882,13 +1933,13 @@ export default function Editor(props: EditorProps) {
         const outputPath = `${dir}${sep}${outName}`;
         const hasEditedCues = !!(rawCues && rawCues.some(c => c.edited));
         const segStyle = styleForTime(seg.start);
-        const burnStyle = hasEditedCues ? { ...segStyle, maxWords: 0 } : segStyle;
+        const burnStyle = (hasEditedCues || useWordAlignedSrt) ? { ...segStyle, maxWords: 0 } : segStyle;
         const segOut = await window.subbi.exportVideo({
           videoPath,
           keepRanges: useKeep ? segKeep : undefined,
           crop: hasCrop ? cropForTime(seg.start) : null,
           cropBgColor: hasCrop ? cropBgColor : undefined,
-          subtitles: hasSubs ? { srtPath: srtPath!, style: burnStyle } : null,
+          subtitles: hasSubs ? { srtPath: burnSrtPath!, style: burnStyle } : null,
           volumeDb: hasVolume ? volumeDb : 0,
           noiseGateDb: hasGate ? noiseGateDb : null,
           saturation: hasSaturation ? saturation : 100,
@@ -1931,10 +1982,12 @@ export default function Editor(props: EditorProps) {
     if (stageSize.w <= 0 || stageSize.h <= 0) return 1;
     return Math.min(stageSize.w / _videoNativeW, stageSize.h / _videoNativeH);
   })();
+  const displayedVideoW = _videoNativeW * previewDisplayScale;
   const overlayStyle: React.CSSProperties = {
     bottom: `${effectiveStyle.marginVPct}%`,
-    left: `${effectiveStyle.marginHPct}%`,
-    right: `${-effectiveStyle.marginHPct}%`,
+    left: '50%',
+    width: displayedVideoW > 0 ? `${displayedVideoW}px` : `${100 - 2 * Math.abs(effectiveStyle.marginHPct)}%`,
+    transform: `translateX(calc(-50% + ${effectiveStyle.marginHPct}%))`,
     fontFamily: effectiveStyle.fontName,
     fontSize: `${effectiveStyle.fontSize * previewDisplayScale}px`,
     color: effectiveStyle.color,
@@ -1970,8 +2023,10 @@ export default function Editor(props: EditorProps) {
       cancelEditCue();
       return;
     }
-    const flattened = resegmentByWords(rawCues, style.maxWords);
-    const updated = flattened.map(c =>
+    const source: Cue[] = (wordsTs && wordsTs.length > 0)
+      ? (cues ?? resegmentByWords(rawCues, style.maxWords))
+      : resegmentByWords(rawCues, style.maxWords);
+    const updated = source.map(c =>
       Math.abs(c.start - target.start) < 1e-6 && Math.abs(c.end - target.end) < 1e-6
         ? { ...c, text: newText, edited: true }
         : c
@@ -3274,7 +3329,7 @@ export default function Editor(props: EditorProps) {
               {rawCues && rawCues.length > 0 && (
                 <button
                   type="button"
-                  onClick={() => { setRawCues(null); setSrtPath(null); }}
+                  onClick={() => { setRawCues(null); setSrtPath(null); setWordsTs(null); }}
                   disabled={isBusy}
                   className="pr-btn pr-btn-ghost"
                   title={t('removeTranscriptionsTitle')}

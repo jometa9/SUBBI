@@ -1145,7 +1145,9 @@ video {
     -2px  2px 0 var(--outline),
      2px  2px 0 var(--outline);
   white-space: pre-wrap;
+  overflow-wrap: anywhere;
   line-height: 1.2;
+  box-sizing: border-box;
 }
 .subtitle-overlay.sample { opacity: 0.55; }
 .subtitle-overlay.is-editable {
