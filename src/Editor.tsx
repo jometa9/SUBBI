@@ -174,6 +174,7 @@ export const TRANSLATIONS: Record<UiLang, Record<string, string>> = {
     cropBg: 'Background',
     cropBgBlack: 'Black',
     cropBgWhite: 'White',
+    cropApplyToAll: 'Apply to all segments',
     sectionFilters: 'Filters',
     filterSaturation: 'Saturation',
     filterOpacity: 'Opacity',
@@ -367,6 +368,7 @@ export const TRANSLATIONS: Record<UiLang, Record<string, string>> = {
     cropBg: 'Fondo',
     cropBgBlack: 'Negro',
     cropBgWhite: 'Blanco',
+    cropApplyToAll: 'Aplicar a todos los segmentos',
     sectionFilters: 'Filtros',
     filterSaturation: 'Saturación',
     filterOpacity: 'Opacidad',
@@ -639,6 +641,7 @@ type ProjectState = {
   splitMarkers?: number[];
   cropMarkers?: number[];
   cropByZone?: Record<string, CropRect>;
+  cropApplyToAll?: boolean;
   styleByZone?: Record<string, SubtitleStyle>;
   styleApplyToAll?: boolean;
   excludedSegments?: Record<string, boolean>;
@@ -690,6 +693,7 @@ export type VideoTemplate = {
   opacity: number;
   opacityBgColor: 'black' | 'white';
   cropByZone: Record<string, CropRect>;
+  cropApplyToAll: boolean;
   style: SubtitleStyle;
   styleByZone: Record<string, SubtitleStyle>;
   styleApplyToAll: boolean;
@@ -884,6 +888,7 @@ export default function Editor(props: EditorProps) {
   const [opacity, setOpacity] = useState<number>(100);
   const [opacityBgColor, setOpacityBgColor] = useState<'black' | 'white'>('black');
   const [cropByZone, setCropByZone] = useState<Record<string, CropRect>>({});
+  const [cropApplyToAll, setCropApplyToAll] = useState<boolean>(true);
   const [styleByZone, setStyleByZone] = useState<Record<string, SubtitleStyle>>({});
   const [styleApplyToAll, setStyleApplyToAll] = useState<boolean>(true);
 
@@ -966,17 +971,18 @@ export default function Editor(props: EditorProps) {
   const activeSegmentKey = activeSegment?.key ?? '0.000';
 
   function cropForTime(t: number): CropRect {
+    if (cropApplyToAll) return crop;
     const z = splitSegments.find(z => t >= z.start && t < z.end) ?? splitSegments[splitSegments.length - 1];
     return (z && cropByZone[z.key]) || crop;
   }
-  const effectiveCrop: CropRect = splitMarkers.length > 0
+  const effectiveCrop: CropRect = (splitMarkers.length > 0 && !cropApplyToAll)
     ? (cropByZone[activeSegmentKey] ?? crop)
     : crop;
 
   function setEffectiveCrop(updater: CropRect | ((c: CropRect) => CropRect)) {
     const apply = (c: CropRect): CropRect =>
       typeof updater === 'function' ? (updater as (c: CropRect) => CropRect)(c) : updater;
-    if (splitMarkers.length === 0) {
+    if (splitMarkers.length === 0 || cropApplyToAll) {
       setCrop(prev => apply(prev));
     } else {
       setCropByZone(prev => ({ ...prev, [activeSegmentKey]: apply(prev[activeSegmentKey] ?? crop) }));
@@ -1030,6 +1036,7 @@ export default function Editor(props: EditorProps) {
     setAspectId('free');
     setCropEnabled(false);
     setCropByZone({});
+    setCropApplyToAll(true);
   }
   function resetSilence() {
     setSilenceRegions([]);
@@ -1175,7 +1182,7 @@ export default function Editor(props: EditorProps) {
       name,
       createdAt: Date.now(),
       thresholdDb, autoThreshold, minSilenceDur,
-      cropEnabled, crop, cropBgColor, aspectId, cropByZone,
+      cropEnabled, crop, cropBgColor, aspectId, cropByZone, cropApplyToAll,
       saturation, opacity, opacityBgColor,
       style, styleByZone, styleApplyToAll,
       volumeDb, noiseGateDb, noiseGateEnabled,
@@ -1202,6 +1209,7 @@ export default function Editor(props: EditorProps) {
     setCropBgColor(tpl.cropBgColor);
     setAspectId(tpl.aspectId);
     setCropByZone(tpl.cropByZone ?? {});
+    setCropApplyToAll(tpl.cropApplyToAll ?? true);
     setSaturation(typeof tpl.saturation === 'number' ? tpl.saturation : 100);
     setOpacity(typeof tpl.opacity === 'number' ? tpl.opacity : 100);
     setOpacityBgColor(tpl.opacityBgColor ?? 'black');
@@ -1586,7 +1594,7 @@ export default function Editor(props: EditorProps) {
         silenceRegions, thresholdDb, autoThreshold, meanVolumeDb, minSilenceDur,
         cropEnabled, crop, cropBgColor, aspectId, saturation, opacity, opacityBgColor, volumeDb, noiseGateDb, noiseGateEnabled,
         srtPath, rawCues, wordsTs, style, language, model,
-        splitMarkers, cropByZone, styleByZone, styleApplyToAll, excludedSegments,
+        splitMarkers, cropByZone, cropApplyToAll, styleByZone, styleApplyToAll, excludedSegments,
         currentTime, timelineZoom, previewZoom, volume, muted, playbackRate,
       });
     }
@@ -1620,6 +1628,7 @@ export default function Editor(props: EditorProps) {
       setWordsTs(saved.wordsTs ?? null);
       setSplitMarkers(saved.splitMarkers ?? []);
       setCropByZone(saved.cropByZone ?? {});
+      setCropApplyToAll(saved.cropApplyToAll ?? true);
       setStyleByZone(saved.styleByZone ?? {});
       setStyleApplyToAll(saved.styleApplyToAll ?? true);
       setExcludedSegments(saved.excludedSegments ?? {});
@@ -1656,6 +1665,7 @@ export default function Editor(props: EditorProps) {
       setNoiseGateEnabled(false);
       setSplitMarkers([]);
       setCropByZone({});
+      setCropApplyToAll(true);
       setStyleByZone({});
       setStyleApplyToAll(true);
       setExcludedSegments({});
@@ -1676,7 +1686,7 @@ export default function Editor(props: EditorProps) {
         silenceRegions, thresholdDb, autoThreshold, meanVolumeDb, minSilenceDur,
         cropEnabled, crop, cropBgColor, aspectId, saturation, opacity, opacityBgColor, volumeDb, noiseGateDb, noiseGateEnabled,
         srtPath, rawCues, wordsTs, style, language, model,
-        splitMarkers, cropByZone, styleByZone, styleApplyToAll, excludedSegments,
+        splitMarkers, cropByZone, cropApplyToAll, styleByZone, styleApplyToAll, excludedSegments,
         currentTime, timelineZoom, previewZoom, volume, muted, playbackRate,
       },
     };
@@ -1697,7 +1707,7 @@ export default function Editor(props: EditorProps) {
   }, [videoPath, silenceRegions, thresholdDb, autoThreshold, meanVolumeDb, minSilenceDur,
       cropEnabled, crop, cropBgColor, aspectId, saturation, opacity, opacityBgColor, volumeDb, noiseGateDb, noiseGateEnabled,
       srtPath, rawCues, style, language, model,
-      splitMarkers, cropByZone, styleByZone, styleApplyToAll, excludedSegments,
+      splitMarkers, cropByZone, cropApplyToAll, styleByZone, styleApplyToAll, excludedSegments,
       currentTime, timelineZoom, previewZoom, volume, muted, playbackRate]);
 
   useEffect(() => {
@@ -2820,7 +2830,7 @@ export default function Editor(props: EditorProps) {
             <span className="pr-section-chev" />
             <span className="pr-section-title">{t('sectionCrop')}</span>
             {cropEnabled && <span className="pr-badge">ON</span>}
-            {splitMarkers.length > 0 && Object.keys(cropByZone).length > 0 && (
+            {splitMarkers.length > 0 && !cropApplyToAll && Object.keys(cropByZone).length > 0 && (
               <span className="pr-badge">{splitSegments.length} {t('cropZonesBadge')}</span>
             )}
             {renderSectionReset(
@@ -2830,6 +2840,16 @@ export default function Editor(props: EditorProps) {
             )}
           </button>
           <div className="pr-section-body">
+            {splitMarkers.length > 0 && (
+              <div className="pr-row">
+                <label className="pr-check">
+                  <input type="checkbox"
+                         checked={cropApplyToAll}
+                         onChange={e => setCropApplyToAll(e.target.checked)} />
+                  <span>{t('cropApplyToAll')}</span>
+                </label>
+              </div>
+            )}
             <div className="pr-row">
               <span className="pr-label">{t('aspectRatio')}</span>
               <div className="pr-aspect-row">
