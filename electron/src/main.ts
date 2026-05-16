@@ -127,8 +127,8 @@ ipcMain.handle('subbi:detectSilences', async (_e, opts: DetectSilencesOptions) =
   return await detectSilences(opts);
 });
 
-ipcMain.handle('subbi:extractPeaks', async (_e, opts: { videoPath: string; targetBins?: number }) => {
-  return await extractPeaks(opts.videoPath, opts.targetBins ?? 2000);
+ipcMain.handle('subbi:extractPeaks', async (_e, opts: { videoPath: string; targetBins?: number; binsPerSecond?: number }) => {
+  return await extractPeaks(opts.videoPath, opts.targetBins ?? 2000, opts.binsPerSecond);
 });
 
 ipcMain.handle('subbi:cutSilences', async (_e, opts: CutSilencesOptions) => {

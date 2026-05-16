@@ -66,7 +66,7 @@ interface SubbiAPI {
     videoHeight?: number;
   }): Promise<string>;
   cancelExport(): Promise<boolean>;
-  extractPeaks(opts: { videoPath: string; targetBins?: number }):
+  extractPeaks(opts: { videoPath: string; targetBins?: number; binsPerSecond?: number }):
     Promise<{ peaks: number[]; duration: number; sampleRate: number }>;
   writeSrt(opts: { srtPath: string; content: string }): Promise<string>;
   setTitleBarOverlay?(opts: { color: string; symbolColor: string }): Promise<boolean>;

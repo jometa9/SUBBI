@@ -1712,7 +1712,7 @@ export default function Editor(props: EditorProps) {
     let cancelled = false;
     (async () => {
       try {
-        const res = await window.subbi.extractPeaks({ videoPath, targetBins: 2000 });
+        const res = await window.subbi.extractPeaks({ videoPath, targetBins: 2000, binsPerSecond: 40 });
         if (cancelled) return;
         setPeaks(res.peaks);
         setVideoDuration(d => d || res.duration);
@@ -2530,18 +2530,23 @@ export default function Editor(props: EditorProps) {
                 <line x1="21" y1="21" x2="16" y2="16" />
               </svg>
             </span>
-            <input
-              type="range"
-              className="pr-range vc-zoom"
-              min={1}
-              max={10}
-              step={0.1}
-              value={timelineZoom}
-              disabled={!videoDuration}
-              style={rangePct(timelineZoom, 1, 10)}
-              onChange={(e) => setTimelineZoom(+e.target.value)}
-              title={`${t('zoomTimeline')}: ${timelineZoom.toFixed(1)}x`}
-            />
+            {(() => {
+              const timelineZoomMax = Math.max(10, Math.ceil((videoDuration || 0) / 10));
+              return (
+                <input
+                  type="range"
+                  className="pr-range vc-zoom"
+                  min={1}
+                  max={timelineZoomMax}
+                  step={0.1}
+                  value={Math.min(timelineZoom, timelineZoomMax)}
+                  disabled={!videoDuration}
+                  style={rangePct(Math.min(timelineZoom, timelineZoomMax), 1, timelineZoomMax)}
+                  onChange={(e) => setTimelineZoom(+e.target.value)}
+                  title={`${t('zoomTimeline')}: ${timelineZoom.toFixed(1)}x`}
+                />
+              );
+            })()}
             {timelineZoom !== 1 && (
               <button
                 type="button"

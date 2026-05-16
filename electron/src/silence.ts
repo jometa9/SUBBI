@@ -111,9 +111,16 @@ export async function detectSilences(opts: DetectSilencesOptions): Promise<Detec
   return { silences, duration, thresholdDb: threshold, meanVolumeDb: mean };
 }
 
-export async function extractPeaks(videoPath: string, targetBins = 2000): Promise<ExtractPeaksResult> {
+export async function extractPeaks(
+  videoPath: string,
+  targetBins = 2000,
+  binsPerSecond?: number,
+): Promise<ExtractPeaksResult> {
   const ffmpeg = findFfmpeg();
   const duration = await ffprobeDuration(ffmpeg, videoPath);
+  if (binsPerSecond && binsPerSecond > 0 && duration > 0) {
+    targetBins = Math.min(200000, Math.max(targetBins, Math.ceil(duration * binsPerSecond)));
+  }
 
   const buf = await new Promise<Buffer>((resolve, reject) => {
     const child = spawn(ffmpeg, [
