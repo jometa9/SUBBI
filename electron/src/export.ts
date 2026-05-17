@@ -224,8 +224,23 @@ function escapeForFilter(p: string): string {
   return p.replace(/\\/g, '/').replace(/:/g, '\\:').replace(/'/g, "\\'");
 }
 
+function systemFontsDir(): string | null {
+  if (process.platform === 'win32') {
+    const winDir = process.env.WINDIR || process.env.SystemRoot || 'C:\\Windows';
+    return path.join(winDir, 'Fonts');
+  }
+  if (process.platform === 'darwin') {
+    return '/Library/Fonts';
+  }
+  return '/usr/share/fonts';
+}
+
 function buildSubtitlesFilter(assPath: string): string {
-  return `ass='${escapeForFilter(assPath)}'`;
+  const fontsDir = systemFontsDir();
+  const fontsPart = fontsDir && fs.existsSync(fontsDir)
+    ? `:fontsdir='${escapeForFilter(fontsDir)}'`
+    : '';
+  return `ass='${escapeForFilter(assPath)}'${fontsPart}`;
 }
 
 function clamp01(v: number): number { return Math.min(1, Math.max(0, v)); }

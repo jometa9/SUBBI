@@ -196,6 +196,8 @@ export const TRANSLATIONS: Record<UiLang, Record<string, string>> = {
     filterOpacity: 'Opacity',
     filterOpacityBg: 'Background',
     filterSpeed: 'Speed',
+    previewSpeed: 'Preview speed',
+    previewSpeedTitle: 'Preview playback speed (does not affect export)',
     timelapseSection: 'Timelapse',
     timelapseEnable: 'Enable timelapse',
     timelapseTarget: 'Target duration',
@@ -417,6 +419,8 @@ export const TRANSLATIONS: Record<UiLang, Record<string, string>> = {
     filterOpacity: 'Opacidad',
     filterOpacityBg: 'Fondo',
     filterSpeed: 'Velocidad',
+    previewSpeed: 'Velocidad de previsualización',
+    previewSpeedTitle: 'Velocidad de reproducción en la previsualización (no afecta al export)',
     timelapseSection: 'Timelapse',
     timelapseEnable: 'Activar timelapse',
     timelapseTarget: 'Duración objetivo',
@@ -1446,6 +1450,7 @@ export default function Editor(props: EditorProps) {
   const [volume, setVolume] = useState(1);
   const [muted, setMuted] = useState(false);
   const [playbackRate, setPlaybackRate] = useState(1);
+  const [previewSpeed, setPreviewSpeed] = useState(1);
   const [timelapseEnabled, setTimelapseEnabled] = useState(false);
   const [timelapseTargetSec, setTimelapseTargetSec] = useState(60);
   const [timelapseMuteOriginal, setTimelapseMuteOriginal] = useState(true);
@@ -1716,8 +1721,8 @@ export default function Editor(props: EditorProps) {
 
   useEffect(() => {
     const v = videoRef.current;
-    if (v) v.playbackRate = effectiveSpeed;
-  }, [effectiveSpeed, videoUrl]);
+    if (v) v.playbackRate = effectiveSpeed * previewSpeed;
+  }, [effectiveSpeed, previewSpeed, videoUrl]);
 
   useEffect(() => {
     const v = videoRef.current;
@@ -2862,6 +2867,24 @@ export default function Editor(props: EditorProps) {
             </button>
             <button className="pr-btn pr-btn-ghost vc-fit-btn" onClick={zoomFit} title="Fit (Ctrl 0)">Fit</button>
             <button className="pr-btn pr-btn-ghost vc-fit-btn" onClick={zoomActual} title="Actual pixels (100%)">1:1</button>
+            <span className="vc-spacer" />
+            <span className="pr-label" title={t('previewSpeedTitle')} style={{ marginRight: 6 }}>{t('previewSpeed')}</span>
+            <Select
+              size="sm"
+              value={String(previewSpeed)}
+              onChange={v => setPreviewSpeed(+v)}
+              options={[
+                { value: '0.25', label: '0.25×' },
+                { value: '0.5', label: '0.5×' },
+                { value: '0.75', label: '0.75×' },
+                { value: '1', label: '1×' },
+                { value: '1.25', label: '1.25×' },
+                { value: '1.5', label: '1.5×' },
+                { value: '2', label: '2×' },
+                { value: '3', label: '3×' },
+                { value: '4', label: '4×' },
+              ]}
+            />
             <span className="vc-spacer" />
             <button
               data-reset-key="all"
