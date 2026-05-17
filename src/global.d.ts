@@ -29,6 +29,7 @@ type SubbiProgressEvent =
   | { kind: 'burn'; pct: number; line: string }
   | { kind: 'cut'; pct: number; line: string }
   | { kind: 'export'; pct: number; line: string }
+  | { kind: 'vcPreview'; pct: number; line: string }
   | { kind: 'modelDownload'; model: 'tiny' | 'medium'; pct: number; line: string };
 
 type SubbiBgAudioExport = {
@@ -67,6 +68,7 @@ interface SubbiAPI {
     subtitles?: { srtPath: string; style: SubbiStyle } | null;
     volumeDb?: number;
     noiseGateDb?: number | null;
+    voiceCleanup?: { enabled: boolean; intensity: 'light' | 'medium' | 'strong' } | null;
     saturation?: number;
     opacity?: number;
     opacityBgColor?: 'black' | 'white';
@@ -77,6 +79,8 @@ interface SubbiAPI {
     bgAudio?: SubbiBgAudioExport | null;
   }): Promise<string>;
   cancelExport(): Promise<boolean>;
+  renderVoiceCleanupPreview(opts: { videoPath: string; intensity: 'light' | 'medium' | 'strong' }): Promise<string>;
+  cancelVoiceCleanupPreview(): Promise<boolean>;
   extractPeaks(opts: { videoPath: string; targetBins?: number; binsPerSecond?: number }):
     Promise<{ peaks: number[]; duration: number; sampleRate: number }>;
   writeSrt(opts: { srtPath: string; content: string }): Promise<string>;

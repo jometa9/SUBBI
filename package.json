@@ -64,6 +64,13 @@
         ]
       },
       {
+        "from": "resources/rnnoise",
+        "to": "rnnoise",
+        "filter": [
+          "**/*.rnnn"
+        ]
+      },
+      {
         "from": "node_modules/ffmpeg-static/ffmpeg",
         "to": "ffmpeg/ffmpeg"
       },

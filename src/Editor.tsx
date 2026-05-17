@@ -112,6 +112,15 @@ export const TRANSLATIONS: Record<UiLang, Record<string, string>> = {
     audioGate: 'Noise gate',
     audioGateHint: 'Mute audio below the threshold (keeps voice, drops low-level noise).',
     audioGateOff: 'Off',
+    voiceCleanup: 'Voice cleanup (export only)',
+    voiceCleanupIntensity: 'Intensity',
+    voiceCleanupLight: 'Light',
+    voiceCleanupMedium: 'Medium',
+    voiceCleanupStrong: 'Strong',
+    voiceCleanupHint: 'Pro voice chain: highpass + RNNoise + denoise + compressor + loudness normalize. Applied on export, or render a full preview below.',
+    voiceCleanupPreviewOn: 'Apply to preview',
+    voiceCleanupPreviewOff: 'Use original',
+    voiceCleanupPreviewCancel: 'Cancel',
     bgAudioAdd: 'Add background audio',
     bgAudioRemove: 'Remove background audio',
     bgAudioVolume: 'Background audio volume',
@@ -314,6 +323,15 @@ export const TRANSLATIONS: Record<UiLang, Record<string, string>> = {
     audioGate: 'Puerta de ruido',
     audioGateHint: 'Silencia el audio por debajo del umbral (mantiene la voz, baja el ruido).',
     audioGateOff: 'Apagada',
+    voiceCleanup: 'Limpieza de voz (solo al exportar)',
+    voiceCleanupIntensity: 'Intensidad',
+    voiceCleanupLight: 'Suave',
+    voiceCleanupMedium: 'Media',
+    voiceCleanupStrong: 'Fuerte',
+    voiceCleanupHint: 'Cadena pro de voz: highpass + RNNoise + denoise + compresor + normalización de volumen. Se aplica al exportar, o renderizá una preview completa abajo.',
+    voiceCleanupPreviewOn: 'Aplicar al preview',
+    voiceCleanupPreviewOff: 'Usar original',
+    voiceCleanupPreviewCancel: 'Cancelar',
     bgAudioAdd: 'Agregar audio de fondo',
     bgAudioRemove: 'Quitar audio de fondo',
     bgAudioVolume: 'Volumen del audio de fondo',
@@ -662,6 +680,8 @@ type ProjectState = {
   volumeDb: number;
   noiseGateDb: number;
   noiseGateEnabled: boolean;
+  voiceCleanupEnabled: boolean;
+  voiceCleanupIntensity: 'light' | 'medium' | 'strong';
   srtPath: string | null;
   rawCues: Cue[] | null;
   wordsTs?: WordTs[] | null;
@@ -909,6 +929,8 @@ export type VideoTemplate = {
   volumeDb: number;
   noiseGateDb: number;
   noiseGateEnabled: boolean;
+  voiceCleanupEnabled: boolean;
+  voiceCleanupIntensity: 'light' | 'medium' | 'strong';
   language: string;
   model: TranscribeModel;
   hadTranscription?: boolean;
@@ -1104,6 +1126,22 @@ export default function Editor(props: EditorProps) {
   const [volumeDb, setVolumeDb] = useState<number>(0);
   const [noiseGateDb, setNoiseGateDb] = useState<number>(-40);
   const [noiseGateEnabled, setNoiseGateEnabled] = useState<boolean>(false);
+  const [voiceCleanupEnabled, setVoiceCleanupEnabled] = useState<boolean>(false);
+  const [voiceCleanupIntensity, setVoiceCleanupIntensity] = useState<'light' | 'medium' | 'strong'>('medium');
+  const [vcPreviewPath, setVcPreviewPath] = useState<string | null>(null);
+  const [vcPreviewBusy, setVcPreviewBusy] = useState<boolean>(false);
+  const [vcPreviewPct, setVcPreviewPct] = useState<number>(0);
+  const [vcPreviewIntensity, setVcPreviewIntensity] = useState<'light' | 'medium' | 'strong' | null>(null);
+
+  useEffect(() => {
+    if (!voiceCleanupEnabled && vcPreviewPath) revertVoiceCleanupPreview();
+  }, [voiceCleanupEnabled]);
+
+  useEffect(() => {
+    setVcPreviewPath(null);
+    setVcPreviewIntensity(null);
+    setVcPreviewPct(0);
+  }, [videoPath]);
 
   const [bgAudio, setBgAudio] = useState<BgAudioState | null>(null);
   const [bgAudioLoading, setBgAudioLoading] = useState(false);
@@ -1261,6 +1299,55 @@ export default function Editor(props: EditorProps) {
     setVolumeDb(0);
     setNoiseGateDb(-40);
     setNoiseGateEnabled(false);
+    setVoiceCleanupEnabled(false);
+    setVoiceCleanupIntensity('medium');
+    revertVoiceCleanupPreview();
+  }
+
+  function revertVoiceCleanupPreview() {
+    setVcPreviewPath(null);
+    setVcPreviewIntensity(null);
+    setVcPreviewPct(0);
+    if (videoPath) {
+      setVideoUrl('file:///' + videoPath.replace(/\\/g, '/'));
+    }
+  }
+
+  async function applyVoiceCleanupPreview() {
+    if (!videoPath || vcPreviewBusy) return;
+    setVcPreviewBusy(true);
+    setVcPreviewPct(0);
+    try {
+      const out = await window.subbi.renderVoiceCleanupPreview({
+        videoPath,
+        intensity: voiceCleanupIntensity,
+      });
+      setVcPreviewPath(out);
+      setVcPreviewIntensity(voiceCleanupIntensity);
+      const v = videoRef.current;
+      const t = v?.currentTime ?? 0;
+      const wasPaused = v?.paused ?? true;
+      setVideoUrl('file:///' + out.replace(/\\/g, '/'));
+      setTimeout(() => {
+        const vv = videoRef.current;
+        if (vv) {
+          try { vv.currentTime = t; } catch {}
+          if (!wasPaused) { try { vv.play(); } catch {} }
+        }
+      }, 80);
+    } catch (err: any) {
+      const raw = String(err?.message || err);
+      if (!raw.includes('evt:export.cancelled')) {
+        setProc({ phase: 'error', message: tEvt(raw) || raw });
+      }
+    } finally {
+      setVcPreviewBusy(false);
+    }
+  }
+
+  async function cancelVoiceCleanupPreview() {
+    try { await window.subbi.cancelVoiceCleanupPreview(); } catch {}
+    setVcPreviewBusy(false);
   }
   function resetFilters() {
     setSaturation(100);
@@ -1400,6 +1487,7 @@ export default function Editor(props: EditorProps) {
       saturation, opacity, opacityBgColor,
       style, styleByZone, styleApplyToAll,
       volumeDb, noiseGateDb, noiseGateEnabled,
+      voiceCleanupEnabled, voiceCleanupIntensity,
       language, model,
       hadTranscription: !!(rawCues && rawCues.length > 0),
     };
@@ -1433,6 +1521,8 @@ export default function Editor(props: EditorProps) {
     setVolumeDb(tpl.volumeDb);
     setNoiseGateDb(tpl.noiseGateDb);
     setNoiseGateEnabled(tpl.noiseGateEnabled);
+    setVoiceCleanupEnabled(tpl.voiceCleanupEnabled ?? false);
+    setVoiceCleanupIntensity(tpl.voiceCleanupIntensity ?? 'medium');
     setLanguage(tpl.language);
     setModel(tpl.model);
     flashTemplateToast(t('templateAppliedToast'));
@@ -1870,6 +1960,8 @@ export default function Editor(props: EditorProps) {
           ? { phase: 'exporting', pct: evt.pct, log: msg ? (p.log + msg + '\n').slice(-2000) : p.log } : p);
       } else if (evt.kind === 'modelDownload') {
         setModelStatus(s => ({ ...s, [evt.model]: { phase: 'downloading', pct: evt.pct } }));
+      } else if (evt.kind === 'vcPreview') {
+        setVcPreviewPct(evt.pct);
       }
     });
     return off;
@@ -1937,6 +2029,7 @@ export default function Editor(props: EditorProps) {
       saveProject(videoPath, {
         silenceRegions, thresholdDb, autoThreshold, meanVolumeDb, minSilenceDur,
         cropEnabled, crop, cropBgColor, aspectId, saturation, opacity, opacityBgColor, volumeDb, noiseGateDb, noiseGateEnabled,
+        voiceCleanupEnabled, voiceCleanupIntensity,
         srtPath, rawCues, wordsTs, style, language, model,
         splitMarkers, cropByZone, cropApplyToAll, styleByZone, styleApplyToAll, excludedSegments,
         currentTime, timelineZoom, previewZoom, volume, muted, playbackRate,
@@ -1968,6 +2061,8 @@ export default function Editor(props: EditorProps) {
       setVolumeDb(saved.volumeDb ?? 0);
       setNoiseGateDb(saved.noiseGateDb ?? -40);
       setNoiseGateEnabled(saved.noiseGateEnabled ?? false);
+      setVoiceCleanupEnabled(saved.voiceCleanupEnabled ?? false);
+      setVoiceCleanupIntensity(saved.voiceCleanupIntensity ?? 'medium');
       setSrtPath(saved.srtPath ?? null);
       setRawCues(saved.rawCues ?? null);
       setWordsTs(saved.wordsTs ?? null);
@@ -2039,6 +2134,7 @@ export default function Editor(props: EditorProps) {
       state: {
         silenceRegions, thresholdDb, autoThreshold, meanVolumeDb, minSilenceDur,
         cropEnabled, crop, cropBgColor, aspectId, saturation, opacity, opacityBgColor, volumeDb, noiseGateDb, noiseGateEnabled,
+        voiceCleanupEnabled, voiceCleanupIntensity,
         srtPath, rawCues, wordsTs, style, language, model,
         splitMarkers, cropByZone, cropApplyToAll, styleByZone, styleApplyToAll, excludedSegments,
         currentTime, timelineZoom, previewZoom, volume, muted, playbackRate,
@@ -2061,6 +2157,7 @@ export default function Editor(props: EditorProps) {
     return () => clearTimeout(handle);
   }, [videoPath, silenceRegions, thresholdDb, autoThreshold, meanVolumeDb, minSilenceDur,
       cropEnabled, crop, cropBgColor, aspectId, saturation, opacity, opacityBgColor, volumeDb, noiseGateDb, noiseGateEnabled,
+      voiceCleanupEnabled, voiceCleanupIntensity,
       srtPath, rawCues, style, language, model,
       splitMarkers, cropByZone, cropApplyToAll, styleByZone, styleApplyToAll, excludedSegments,
       currentTime, timelineZoom, previewZoom, volume, muted, playbackRate, bgAudio]);
@@ -2227,11 +2324,12 @@ export default function Editor(props: EditorProps) {
     const hasCrop = cropEnabled;
     const hasVolume = Math.abs(volumeDb) > 0.01;
     const hasGate = noiseGateEnabled && noiseGateDb < -0.01;
+    const hasVoiceCleanup = voiceCleanupEnabled;
     const hasSplits = splitMarkers.length > 0;
     const hasSaturation = Math.abs(saturation - 100) > 0.5;
     const hasOpacity = opacity < 99.5;
     const hasBgAudio = !!bgAudio && !bgAudio.muted && (bgAudio.outPoint - bgAudio.inPoint) > 0.02;
-    if (!hasSilence && !hasSubs && !hasCrop && !hasVolume && !hasGate && !hasSplits && !hasSaturation && !hasOpacity && !hasBgAudio) {
+    if (!hasSilence && !hasSubs && !hasCrop && !hasVolume && !hasGate && !hasVoiceCleanup && !hasSplits && !hasSaturation && !hasOpacity && !hasBgAudio) {
       setProc({ phase: 'error', message: t('nothingToExport') });
       return;
     }
@@ -2335,6 +2433,7 @@ export default function Editor(props: EditorProps) {
           subtitles: hasSubs ? { srtPath: burnSrtPath!, style: burnStyle } : null,
           volumeDb: hasVolume ? volumeDb : 0,
           noiseGateDb: hasGate ? noiseGateDb : null,
+          voiceCleanup: hasVoiceCleanup ? { enabled: true, intensity: voiceCleanupIntensity } : null,
           saturation: hasSaturation ? saturation : 100,
           opacity: hasOpacity ? opacity : 100,
           opacityBgColor: hasOpacity ? opacityBgColor : undefined,
@@ -3545,7 +3644,7 @@ export default function Editor(props: EditorProps) {
             {renderSectionReset(
               'audio',
               resetAudio,
-              Math.abs(volumeDb) > 0.01 || noiseGateEnabled || noiseGateDb !== -40
+              Math.abs(volumeDb) > 0.01 || noiseGateEnabled || noiseGateDb !== -40 || voiceCleanupEnabled
             )}
           </button>
           <div className="pr-section-body">
@@ -3589,6 +3688,50 @@ export default function Editor(props: EditorProps) {
               </span>
             </div>
             <div className="pr-hint">{t('audioGateHint')}</div>
+
+            <div className="pr-row" style={{ marginTop: 8 }}>
+              <label className="pr-check">
+                <input type="checkbox"
+                       checked={voiceCleanupEnabled}
+                       disabled={!videoPath || isEditBusy}
+                       onChange={e => setVoiceCleanupEnabled(e.target.checked)} />
+                <span>{t('voiceCleanup')}</span>
+              </label>
+            </div>
+            <div className="pr-row">
+              <span className="pr-label">{t('voiceCleanupIntensity')}</span>
+              <Select
+                className="pr-input-flex"
+                value={voiceCleanupIntensity}
+                onChange={v => setVoiceCleanupIntensity(v as 'light' | 'medium' | 'strong')}
+                disabled={!videoPath || isEditBusy || !voiceCleanupEnabled}
+                options={[
+                  { value: 'light', label: t('voiceCleanupLight') },
+                  { value: 'medium', label: t('voiceCleanupMedium') },
+                  { value: 'strong', label: t('voiceCleanupStrong') },
+                ]}
+              />
+            </div>
+            <div className="pr-row pr-row-end">
+              {!vcPreviewBusy && (
+                <button
+                  onClick={vcPreviewPath && vcPreviewIntensity === voiceCleanupIntensity ? revertVoiceCleanupPreview : applyVoiceCleanupPreview}
+                  disabled={!videoPath || isEditBusy || !voiceCleanupEnabled}
+                  className="pr-btn pr-btn-ghost">
+                  {vcPreviewPath && vcPreviewIntensity === voiceCleanupIntensity
+                    ? t('voiceCleanupPreviewOff')
+                    : t('voiceCleanupPreviewOn')}
+                </button>
+              )}
+              {vcPreviewBusy && (
+                <button
+                  onClick={cancelVoiceCleanupPreview}
+                  className="pr-btn pr-btn-ghost">
+                  {t('voiceCleanupPreviewCancel')} ({Math.round(vcPreviewPct)}%)
+                </button>
+              )}
+            </div>
+            <div className="pr-hint">{t('voiceCleanupHint')}</div>
           </div>
         </div>
 

@@ -4,6 +4,21 @@ import fs from 'fs';
 import os from 'os';
 import { randomUUID } from 'crypto';
 import { findFfmpeg, parseDurationFromStderr, parseTimeFromStderr } from './ffmpeg';
+import { findRnnoiseModel, escapeFilterPath } from './rnnoise';
+
+export type VoiceCleanupIntensity = 'light' | 'medium' | 'strong';
+
+export function buildVoiceCleanupChain(intensity: VoiceCleanupIntensity): string {
+  const modelPath = findRnnoiseModel();
+  const arnndn = modelPath ? `arnndn=m=${escapeFilterPath(modelPath)},` : '';
+  if (intensity === 'light') {
+    return `highpass=f=80,${arnndn}afftdn=nf=-25:nr=10,acompressor=threshold=-22dB:ratio=2:attack=10:release=200:makeup=2`;
+  }
+  if (intensity === 'strong') {
+    return `highpass=f=100,${arnndn}${arnndn}afftdn=nf=-25:nr=28,acompressor=threshold=-18dB:ratio=4:attack=5:release=150:makeup=4,loudnorm=I=-14:TP=-1.5:LRA=11`;
+  }
+  return `highpass=f=85,${arnndn}afftdn=nf=-25:nr=18,acompressor=threshold=-20dB:ratio=3:attack=8:release=200:makeup=3,loudnorm=I=-16:TP=-1.5:LRA=11`;
+}
 
 let currentExportChild: ChildProcess | null = null;
 let cancelRequested = false;
@@ -49,6 +64,7 @@ export interface ExportOptions {
   subtitles?: { srtPath: string; style: SubtitleStyle } | null;
   volumeDb?: number;
   noiseGateDb?: number | null;
+  voiceCleanup?: { enabled: boolean; intensity: VoiceCleanupIntensity } | null;
   saturation?: number;
   opacity?: number;
   opacityBgColor?: 'black' | 'white';
@@ -336,7 +352,14 @@ export async function exportVideo(
     );
     audioSourceLabel = '[agate]';
   }
-  const wantsAudioFx = wantsVolume || wantsGate;
+  const vc = opts.voiceCleanup;
+  const wantsVoiceCleanup = !!(vc && vc.enabled);
+  if (wantsVoiceCleanup) {
+    const chain = buildVoiceCleanupChain(vc!.intensity || 'medium');
+    filterParts.push(`${audioSourceLabel}${chain}[avc]`);
+    audioSourceLabel = '[avc]';
+  }
+  const wantsAudioFx = wantsVolume || wantsGate || wantsVoiceCleanup;
 
   if (willCut) {
     const n = ranges.length;
@@ -487,6 +510,85 @@ export async function exportVideo(
         console.error('[export] ffmpeg failed code=' + code);
         console.error('[export] args:', args.join(' '));
         console.error('[export] stderr tail:\n' + err.slice(-4000));
+        reject(new Error('evt:err.export'));
+      }
+    });
+  });
+}
+
+let currentPreviewChild: ChildProcess | null = null;
+let previewCancelRequested = false;
+
+export function cancelVoiceCleanupPreview(): boolean {
+  previewCancelRequested = true;
+  const child = currentPreviewChild;
+  if (child && !child.killed) {
+    try { child.kill('SIGKILL'); } catch {}
+    return true;
+  }
+  return false;
+}
+
+export async function renderVoiceCleanupPreview(
+  opts: { videoPath: string; intensity: VoiceCleanupIntensity },
+  onProgress: (pct: number, line: string) => void
+): Promise<string> {
+  const ffmpeg = findFfmpeg();
+  const chain = buildVoiceCleanupChain(opts.intensity);
+  const tmpDir = path.join(os.tmpdir(), 'subbi');
+  fs.mkdirSync(tmpDir, { recursive: true });
+  const ext = path.extname(opts.videoPath) || '.mp4';
+  const outPath = path.join(tmpDir, `vc-preview-${randomUUID()}${ext}`);
+
+  const args = [
+    '-y', '-hide_banner', '-stats',
+    '-i', opts.videoPath,
+    '-map', '0:v', '-map', '0:a?',
+    '-c:v', 'copy',
+    '-filter:a', chain,
+    '-c:a', 'aac', '-b:a', '192k',
+    '-movflags', '+faststart',
+    outPath,
+  ];
+
+  let totalSec: number | null = null;
+  onProgress(0, '');
+  previewCancelRequested = false;
+
+  return await new Promise<string>((resolve, reject) => {
+    const child = spawn(ffmpeg, args);
+    currentPreviewChild = child;
+    let err = '';
+    child.stderr.on('data', (d) => {
+      const s = d.toString();
+      err += s;
+      if (totalSec == null) totalSec = parseDurationFromStderr(err);
+      for (const line of s.split(/\r|\n/)) {
+        if (!line.trim()) continue;
+        const t = parseTimeFromStderr(line);
+        if (t != null && totalSec) {
+          onProgress(Math.min(100, (t / totalSec) * 100), '');
+        }
+      }
+    });
+    child.on('error', (e) => { currentPreviewChild = null; reject(e); });
+    child.on('close', (code, signal) => {
+      currentPreviewChild = null;
+      if (previewCancelRequested) {
+        previewCancelRequested = false;
+        try { if (fs.existsSync(outPath)) fs.unlinkSync(outPath); } catch {}
+        reject(new Error('evt:export.cancelled'));
+        return;
+      }
+      if (code === 0) {
+        onProgress(100, '');
+        resolve(outPath);
+      } else if (signal) {
+        try { if (fs.existsSync(outPath)) fs.unlinkSync(outPath); } catch {}
+        reject(new Error('evt:export.cancelled'));
+      } else {
+        console.error('[vc-preview] ffmpeg failed code=' + code);
+        console.error('[vc-preview] stderr tail:\n' + err.slice(-2000));
         reject(new Error('evt:err.export'));
       }
     });

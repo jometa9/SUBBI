@@ -11,6 +11,12 @@ const MODELS = [
 const BASE_URL = 'https://huggingface.co/ggerganov/whisper.cpp/resolve/main/';
 const DEST_DIR = path.resolve(__dirname, '..', 'resources', 'whisper');
 
+const RNNOISE_DIR = path.resolve(__dirname, '..', 'resources', 'rnnoise');
+const RNNOISE_MODEL = {
+  name: 'cb.rnnn',
+  url: 'https://raw.githubusercontent.com/GregorR/rnnoise-models/master/conjoined-burgers-2018-08-28/cb.rnnn',
+};
+
 function fmtMB(n) { return (n / (1024 * 1024)).toFixed(1) + ' MB'; }
 
 function download(url, dest, expectedBytes) {
@@ -87,6 +93,20 @@ async function main() {
   }
 
   console.log('Done.');
+
+  fs.mkdirSync(RNNOISE_DIR, { recursive: true });
+  const rnnDest = path.join(RNNOISE_DIR, RNNOISE_MODEL.name);
+  if (fs.existsSync(rnnDest) && fs.statSync(rnnDest).size > 1024) {
+    console.log(`✓ RNNoise model already present (${RNNOISE_MODEL.name})`);
+  } else {
+    console.log(`→ RNNoise model ${RNNOISE_MODEL.name}`);
+    try {
+      await download(RNNOISE_MODEL.url, rnnDest, 0);
+      console.log('RNNoise model ready.');
+    } catch (err) {
+      console.warn(`RNNoise model download failed: ${err.message}. Voice Cleanup will fall back to non-neural denoise.`);
+    }
+  }
 }
 
 main().catch((err) => {

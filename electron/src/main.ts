@@ -5,7 +5,7 @@ import { transcribe, type TranscribeOptions } from './transcriber';
 import { hasModel, downloadModel, type WhisperModel } from './models';
 import { burn, type BurnOptions } from './burner';
 import { detectSilences, cutSilences, extractPeaks, type DetectSilencesOptions, type CutSilencesOptions } from './silence';
-import { exportVideo, cancelExport, type ExportOptions } from './export';
+import { exportVideo, cancelExport, renderVoiceCleanupPreview, cancelVoiceCleanupPreview, type ExportOptions, type VoiceCleanupIntensity } from './export';
 
 const isDev = !app.isPackaged;
 
@@ -159,6 +159,16 @@ ipcMain.handle('subbi:exportVideo', async (_e, opts: ExportOptions) => {
 
 ipcMain.handle('subbi:cancelExport', async () => {
   return cancelExport();
+});
+
+ipcMain.handle('subbi:renderVoiceCleanupPreview', async (_e, opts: { videoPath: string; intensity: VoiceCleanupIntensity }) => {
+  return await renderVoiceCleanupPreview(opts, (pct, line) => {
+    mainWindow?.webContents.send('subbi:progress', { kind: 'vcPreview', pct, line });
+  });
+});
+
+ipcMain.handle('subbi:cancelVoiceCleanupPreview', async () => {
+  return cancelVoiceCleanupPreview();
 });
 
 ipcMain.handle('subbi:writeSrt', async (_e, opts: { srtPath: string; content: string }) => {

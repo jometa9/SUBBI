@@ -15,6 +15,8 @@ contextBridge.exposeInMainWorld('subbi', {
   cutSilences: (opts: any) => ipcRenderer.invoke('subbi:cutSilences', opts),
   exportVideo: (opts: any) => ipcRenderer.invoke('subbi:exportVideo', opts),
   cancelExport: () => ipcRenderer.invoke('subbi:cancelExport'),
+  renderVoiceCleanupPreview: (opts: any) => ipcRenderer.invoke('subbi:renderVoiceCleanupPreview', opts),
+  cancelVoiceCleanupPreview: () => ipcRenderer.invoke('subbi:cancelVoiceCleanupPreview'),
   extractPeaks: (opts: any) => ipcRenderer.invoke('subbi:extractPeaks', opts),
   writeSrt: (opts: any) => ipcRenderer.invoke('subbi:writeSrt', opts),
   setTitleBarOverlay: (opts: { color: string; symbolColor: string }) =>
