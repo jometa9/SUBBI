@@ -196,6 +196,16 @@ export const TRANSLATIONS: Record<UiLang, Record<string, string>> = {
     filterOpacity: 'Opacity',
     filterOpacityBg: 'Background',
     filterSpeed: 'Speed',
+    timelapseSection: 'Timelapse',
+    timelapseEnable: 'Enable timelapse',
+    timelapseTarget: 'Target duration',
+    timelapseSeconds: 'sec',
+    timelapseMute: 'Mute original audio',
+    timelapseHint: 'Speeds up the video so its duration (after silence cuts) matches the target.',
+    timelapseComputed: 'Computed speed: {x}× (base {base}s → target {target}s)',
+    timelapseExtreme: 'Very high speed — preview may differ from final export.',
+    timelapseNoBase: 'Load a video to compute timelapse speed.',
+    timelapseOverrideSpeed: 'Overrides Speed in Filters while enabled.',
     exportPartsHint: 'Export will produce one file per segment.',
     excludeSegment: 'Exclude from export',
     includeSegment: 'Include in export',
@@ -407,6 +417,16 @@ export const TRANSLATIONS: Record<UiLang, Record<string, string>> = {
     filterOpacity: 'Opacidad',
     filterOpacityBg: 'Fondo',
     filterSpeed: 'Velocidad',
+    timelapseSection: 'Timelapse',
+    timelapseEnable: 'Activar timelapse',
+    timelapseTarget: 'Duración objetivo',
+    timelapseSeconds: 'seg',
+    timelapseMute: 'Silenciar audio original',
+    timelapseHint: 'Acelera el video para que su duración (sin contar silencios) coincida con el objetivo.',
+    timelapseComputed: 'Velocidad calculada: {x}× (base {base}s → objetivo {target}s)',
+    timelapseExtreme: 'Velocidad muy alta — la previsualización puede no coincidir con el export final.',
+    timelapseNoBase: 'Carga un video para calcular la velocidad del timelapse.',
+    timelapseOverrideSpeed: 'Reemplaza a Velocidad en Filtros mientras está activo.',
     exportPartsHint: 'Se exportará un archivo por cada segmento.',
     excludeSegment: 'Excluir del export',
     includeSegment: 'Incluir en el export',
@@ -701,6 +721,9 @@ type ProjectState = {
   volume?: number;
   muted?: boolean;
   playbackRate?: number;
+  timelapseEnabled?: boolean;
+  timelapseTargetSec?: number;
+  timelapseMuteOriginal?: boolean;
   bgAudio?: BgAudioPersist | null;
 };
 
@@ -1322,19 +1345,25 @@ export default function Editor(props: EditorProps) {
         videoPath,
         intensity: voiceCleanupIntensity,
       });
-      setVcPreviewPath(out);
-      setVcPreviewIntensity(voiceCleanupIntensity);
       const v = videoRef.current;
       const t = v?.currentTime ?? 0;
       const wasPaused = v?.paused ?? true;
-      setVideoUrl('file:///' + out.replace(/\\/g, '/'));
-      setTimeout(() => {
+      setVcPreviewPath(out);
+      setVcPreviewIntensity(voiceCleanupIntensity);
+      const newUrl = 'file:///' + out.replace(/\\/g, '/');
+      setVideoUrl(newUrl);
+      requestAnimationFrame(() => {
         const vv = videoRef.current;
         if (vv) {
-          try { vv.currentTime = t; } catch {}
-          if (!wasPaused) { try { vv.play(); } catch {} }
+          try { vv.load(); } catch {}
+          const onReady = () => {
+            try { vv.currentTime = t; } catch {}
+            if (!wasPaused) { try { vv.play(); } catch {} }
+            vv.removeEventListener('loadedmetadata', onReady);
+          };
+          vv.addEventListener('loadedmetadata', onReady);
         }
-      }, 80);
+      });
     } catch (err: any) {
       const raw = String(err?.message || err);
       if (!raw.includes('evt:export.cancelled')) {
@@ -1354,6 +1383,11 @@ export default function Editor(props: EditorProps) {
     setOpacity(100);
     setOpacityBgColor('black');
     setPlaybackRate(1);
+  }
+  function resetTimelapse() {
+    setTimelapseEnabled(false);
+    setTimelapseTargetSec(60);
+    setTimelapseMuteOriginal(true);
   }
   function resetStyle() {
     if (splitMarkers.length > 0) {
@@ -1401,6 +1435,7 @@ export default function Editor(props: EditorProps) {
     resetSilence();
     resetAudio();
     resetFilters();
+    resetTimelapse();
     resetStyle();
     resetSplits();
     setEditingCue(null);
@@ -1411,6 +1446,27 @@ export default function Editor(props: EditorProps) {
   const [volume, setVolume] = useState(1);
   const [muted, setMuted] = useState(false);
   const [playbackRate, setPlaybackRate] = useState(1);
+  const [timelapseEnabled, setTimelapseEnabled] = useState(false);
+  const [timelapseTargetSec, setTimelapseTargetSec] = useState(60);
+  const [timelapseMuteOriginal, setTimelapseMuteOriginal] = useState(true);
+
+  const timelapseBaseDuration = useMemo(() => {
+    if (!videoDuration) return 0;
+    const cuts = silenceRegions.filter(r => r.enabled).map(r => ({ start: r.start, end: r.end })).sort((a, b) => a.start - b.start);
+    let total = 0;
+    let cursor = 0;
+    for (const c of cuts) {
+      if (c.start > cursor) total += Math.min(c.start, videoDuration) - cursor;
+      cursor = Math.max(cursor, c.end);
+    }
+    if (cursor < videoDuration) total += videoDuration - cursor;
+    return total;
+  }, [videoDuration, silenceRegions]);
+  const timelapseSpeed = timelapseEnabled && timelapseBaseDuration > 0 && timelapseTargetSec > 0
+    ? timelapseBaseDuration / timelapseTargetSec
+    : 1;
+  const effectiveSpeed = timelapseEnabled && timelapseSpeed > 0 ? timelapseSpeed : playbackRate;
+
   const [previewZoom, setPreviewZoom] = useState(1);
   const ZOOM_MIN = 0.05, ZOOM_MAX = 8;
 
@@ -1452,7 +1508,7 @@ export default function Editor(props: EditorProps) {
   }
 
   const [openSections, setOpenSections] = useState<Record<string, boolean>>({
-    crop: true, silence: true, audio: true, filters: true, transcription: true, style: true, templates: true,
+    crop: true, silence: true, audio: true, filters: true, timelapse: true, transcription: true, style: true, templates: true,
     ...(initial.openSections ?? {}),
   });
 
@@ -1660,8 +1716,8 @@ export default function Editor(props: EditorProps) {
 
   useEffect(() => {
     const v = videoRef.current;
-    if (v) v.playbackRate = playbackRate;
-  }, [playbackRate, videoUrl]);
+    if (v) v.playbackRate = effectiveSpeed;
+  }, [effectiveSpeed, videoUrl]);
 
   useEffect(() => {
     const v = videoRef.current;
@@ -1698,7 +1754,19 @@ export default function Editor(props: EditorProps) {
       if (ctx && ctx.state === 'suspended') ctx.resume().catch(() => {});
     };
     v.addEventListener('play', onPlay);
-    return () => v.removeEventListener('play', onPlay);
+    return () => {
+      v.removeEventListener('play', onPlay);
+      const ctx = audioCtxRef.current;
+      if (ctx) {
+        try { ctx.close(); } catch {}
+      }
+      audioCtxRef.current = null;
+      audioSourceRef.current = null;
+      audioGainRef.current = null;
+      audioGateRef.current = null;
+      audioAnalyserRef.current = null;
+      audioGateBufferRef.current = null;
+    };
   }, [videoUrl]);
 
   useEffect(() => {
@@ -2033,6 +2101,7 @@ export default function Editor(props: EditorProps) {
         srtPath, rawCues, wordsTs, style, language, model,
         splitMarkers, cropByZone, cropApplyToAll, styleByZone, styleApplyToAll, excludedSegments,
         currentTime, timelineZoom, previewZoom, volume, muted, playbackRate,
+        timelapseEnabled, timelapseTargetSec, timelapseMuteOriginal,
         bgAudio: bgAudio ? bgAudioToPersist(bgAudio) : null,
       });
     }
@@ -2081,6 +2150,10 @@ export default function Editor(props: EditorProps) {
       if (typeof saved.volume === 'number') setVolume(saved.volume);
       if (typeof saved.muted === 'boolean') setMuted(saved.muted);
       if (typeof saved.playbackRate === 'number') setPlaybackRate(saved.playbackRate);
+      setTimelapseEnabled(!!saved.timelapseEnabled);
+      if (typeof saved.timelapseTargetSec === 'number' && saved.timelapseTargetSec > 0) setTimelapseTargetSec(saved.timelapseTargetSec);
+      else setTimelapseTargetSec(60);
+      setTimelapseMuteOriginal(saved.timelapseMuteOriginal ?? true);
       pendingPlaybackRef.current = {
         currentTime: saved.currentTime,
         volume: saved.volume,
@@ -2120,6 +2193,9 @@ export default function Editor(props: EditorProps) {
       setCurrentTime(0);
       setTimelineZoom(1);
       setPreviewZoom(1);
+      setTimelapseEnabled(false);
+      setTimelapseTargetSec(60);
+      setTimelapseMuteOriginal(true);
       pendingPlaybackRef.current = null;
       setBgAudio(null);
     }
@@ -2138,6 +2214,7 @@ export default function Editor(props: EditorProps) {
         srtPath, rawCues, wordsTs, style, language, model,
         splitMarkers, cropByZone, cropApplyToAll, styleByZone, styleApplyToAll, excludedSegments,
         currentTime, timelineZoom, previewZoom, volume, muted, playbackRate,
+        timelapseEnabled, timelapseTargetSec, timelapseMuteOriginal,
         bgAudio: bgAudio ? bgAudioToPersist(bgAudio) : null,
       },
     };
@@ -2160,7 +2237,8 @@ export default function Editor(props: EditorProps) {
       voiceCleanupEnabled, voiceCleanupIntensity,
       srtPath, rawCues, style, language, model,
       splitMarkers, cropByZone, cropApplyToAll, styleByZone, styleApplyToAll, excludedSegments,
-      currentTime, timelineZoom, previewZoom, volume, muted, playbackRate, bgAudio]);
+      currentTime, timelineZoom, previewZoom, volume, muted, playbackRate,
+      timelapseEnabled, timelapseTargetSec, timelapseMuteOriginal, bgAudio]);
 
   useEffect(() => {
     return () => {
@@ -2437,7 +2515,8 @@ export default function Editor(props: EditorProps) {
           saturation: hasSaturation ? saturation : 100,
           opacity: hasOpacity ? opacity : 100,
           opacityBgColor: hasOpacity ? opacityBgColor : undefined,
-          speed: playbackRate !== 1 ? playbackRate : undefined,
+          speed: effectiveSpeed !== 1 ? effectiveSpeed : undefined,
+          muteOriginal: timelapseEnabled && timelapseMuteOriginal ? true : undefined,
           outputPath,
           videoWidth: videoW || undefined,
           videoHeight: videoH || undefined,
@@ -2857,6 +2936,7 @@ export default function Editor(props: EditorProps) {
               style={wrapStyle}
             >
               <video
+                key={videoUrl ?? ''}
                 ref={videoRef}
                 src={videoUrl}
                 onClick={togglePlay}
@@ -3753,9 +3833,9 @@ export default function Editor(props: EditorProps) {
               <span className="pr-label">{t('filterSpeed')}</span>
               <Select
                 className="pr-input-flex"
-                value={String(playbackRate)}
+                value={timelapseEnabled ? '1' : String(playbackRate)}
                 onChange={v => setPlaybackRate(+v)}
-                disabled={!videoPath || isEditBusy}
+                disabled={!videoPath || isEditBusy || timelapseEnabled}
                 options={[
                   { value: '0.25', label: '0.25×' },
                   { value: '0.5', label: '0.5×' },
@@ -3766,6 +3846,9 @@ export default function Editor(props: EditorProps) {
                   { value: '2', label: '2×' },
                 ]}
               />
+              {timelapseEnabled && (
+                <span className="pr-value" title={t('timelapseOverrideSpeed')}>{effectiveSpeed.toFixed(2)}×</span>
+              )}
             </div>
             <div className="pr-row">
               <span className="pr-label">{t('filterSaturation')}</span>
@@ -3814,6 +3897,76 @@ export default function Editor(props: EditorProps) {
                 >{t('cropBgWhite')}</button>
               </div>
             </div>
+          </div>
+        </div>
+
+        <div className={'pr-section' + (openSections.timelapse ? ' is-open' : ' is-closed')}>
+          <button className="pr-section-head" onClick={() => toggleSection('timelapse')} type="button">
+            <span className="pr-section-chev" />
+            <span className="pr-section-title">{t('timelapseSection')}</span>
+            {timelapseEnabled && (
+              <span className="pr-badge">{effectiveSpeed.toFixed(2)}×</span>
+            )}
+            {renderSectionReset(
+              'timelapse',
+              resetTimelapse,
+              timelapseEnabled || timelapseTargetSec !== 60 || !timelapseMuteOriginal
+            )}
+          </button>
+          <div className="pr-section-body">
+            <div className="pr-row">
+              <label className="pr-check">
+                <input
+                  type="checkbox"
+                  checked={timelapseEnabled}
+                  disabled={!videoPath || isEditBusy}
+                  onChange={e => setTimelapseEnabled(e.target.checked)}
+                />
+                <span>{t('timelapseEnable')}</span>
+              </label>
+            </div>
+            <div className="pr-row">
+              <span className="pr-label">{t('timelapseTarget')}</span>
+              <input
+                type="number"
+                className="pr-input-flex"
+                min={1}
+                step={1}
+                value={timelapseTargetSec}
+                disabled={!videoPath || isEditBusy || !timelapseEnabled}
+                onChange={e => {
+                  const n = Math.max(0.1, +e.target.value || 0);
+                  setTimelapseTargetSec(n);
+                }}
+              />
+              <span className="pr-value">{t('timelapseSeconds')}</span>
+            </div>
+            <div className="pr-row">
+              <label className="pr-check">
+                <input
+                  type="checkbox"
+                  checked={timelapseMuteOriginal}
+                  disabled={!videoPath || isEditBusy || !timelapseEnabled}
+                  onChange={e => setTimelapseMuteOriginal(e.target.checked)}
+                />
+                <span>{t('timelapseMute')}</span>
+              </label>
+            </div>
+            {timelapseEnabled && timelapseBaseDuration > 0 && (
+              <div className="pr-hint">
+                {t('timelapseComputed')
+                  .replace('{x}', timelapseSpeed.toFixed(2))
+                  .replace('{base}', timelapseBaseDuration.toFixed(2))
+                  .replace('{target}', String(timelapseTargetSec))}
+              </div>
+            )}
+            {timelapseEnabled && timelapseBaseDuration <= 0 && (
+              <div className="pr-hint">{t('timelapseNoBase')}</div>
+            )}
+            {timelapseEnabled && timelapseSpeed > 100 && (
+              <div className="pr-hint">{t('timelapseExtreme')}</div>
+            )}
+            <div className="pr-hint">{t('timelapseHint')}</div>
           </div>
         </div>
 

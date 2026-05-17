@@ -73,6 +73,7 @@ interface SubbiAPI {
     opacity?: number;
     opacityBgColor?: 'black' | 'white';
     speed?: number;
+    muteOriginal?: boolean;
     outputPath?: string;
     videoWidth?: number;
     videoHeight?: number;

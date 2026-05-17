@@ -4,13 +4,18 @@ import fs from 'fs';
 import os from 'os';
 import { randomUUID } from 'crypto';
 import { findFfmpeg, parseDurationFromStderr, parseTimeFromStderr } from './ffmpeg';
-import { findRnnoiseModel, escapeFilterPath } from './rnnoise';
+import { findRnnoiseModel } from './rnnoise';
 
 export type VoiceCleanupIntensity = 'light' | 'medium' | 'strong';
 
+export function voiceCleanupSpawnCwd(): string | undefined {
+  const modelPath = findRnnoiseModel();
+  return modelPath ? path.dirname(modelPath) : undefined;
+}
+
 export function buildVoiceCleanupChain(intensity: VoiceCleanupIntensity): string {
   const modelPath = findRnnoiseModel();
-  const arnndn = modelPath ? `arnndn=m=${escapeFilterPath(modelPath)},` : '';
+  const arnndn = modelPath ? `arnndn=m=${path.basename(modelPath)},` : '';
   if (intensity === 'light') {
     return `highpass=f=80,${arnndn}afftdn=nf=-25:nr=10,acompressor=threshold=-22dB:ratio=2:attack=10:release=200:makeup=2`;
   }
@@ -69,6 +74,7 @@ export interface ExportOptions {
   opacity?: number;
   opacityBgColor?: 'black' | 'white';
   speed?: number;
+  muteOriginal?: boolean;
   outputPath?: string;
   videoWidth?: number;
   videoHeight?: number;
@@ -273,9 +279,24 @@ export async function exportVideo(
 
   const ext = path.extname(opts.videoPath) || '.mp4';
   const base = path.basename(opts.videoPath, ext);
-  const outPath = opts.outputPath
-    ?? path.join(path.dirname(opts.videoPath), `${base}.subbi${ext}`);
-  if (fs.existsSync(outPath)) fs.unlinkSync(outPath);
+  const defaultOut = path.join(path.dirname(opts.videoPath), `${base}.subbi${ext}`);
+  let outPath = opts.outputPath ?? defaultOut;
+  if (fs.existsSync(outPath)) {
+    try {
+      fs.unlinkSync(outPath);
+    } catch (err: any) {
+      if (err?.code !== 'EBUSY' && err?.code !== 'EPERM') throw err;
+      const dir = path.dirname(outPath);
+      const outBase = path.basename(outPath, ext);
+      let found = false;
+      for (let i = 2; i < 1000; i++) {
+        const candidate = path.join(dir, `${outBase}.${i}${ext}`);
+        if (!fs.existsSync(candidate)) { outPath = candidate; found = true; break; }
+        try { fs.unlinkSync(candidate); outPath = candidate; found = true; break; } catch {}
+      }
+      if (!found) throw err;
+    }
+  }
 
   const ranges = (opts.keepRanges || [])
     .map(r => ({ start: Math.max(0, r.start), end: r.end }))
@@ -340,7 +361,12 @@ export async function exportVideo(
   const wantsVolume = Math.abs(volumeDb) > 0.01;
   const gateDb = typeof opts.noiseGateDb === 'number' && isFinite(opts.noiseGateDb) ? opts.noiseGateDb : null;
   const wantsGate = gateDb != null && gateDb < -0.01 && gateDb > -90;
+  const wantsMuteOriginal = !!opts.muteOriginal;
   let audioSourceLabel = '[0:a]';
+  if (wantsMuteOriginal) {
+    filterParts.push(`${audioSourceLabel}volume=0[amute]`);
+    audioSourceLabel = '[amute]';
+  }
   if (wantsVolume) {
     filterParts.push(`${audioSourceLabel}volume=${volumeDb.toFixed(2)}dB[avol]`);
     audioSourceLabel = '[avol]';
@@ -359,7 +385,7 @@ export async function exportVideo(
     filterParts.push(`${audioSourceLabel}${chain}[avc]`);
     audioSourceLabel = '[avc]';
   }
-  const wantsAudioFx = wantsVolume || wantsGate || wantsVoiceCleanup;
+  const wantsAudioFx = wantsMuteOriginal || wantsVolume || wantsGate || wantsVoiceCleanup;
 
   if (willCut) {
     const n = ranges.length;
@@ -456,8 +482,9 @@ export async function exportVideo(
     throw new Error('evt:export.cancelled');
   }
 
+  const spawnCwd = wantsVoiceCleanup ? voiceCleanupSpawnCwd() : undefined;
   return await new Promise<string>((resolve, reject) => {
-    const child = spawn(ffmpeg, args);
+    const child = spawn(ffmpeg, args, spawnCwd ? { cwd: spawnCwd } : undefined);
     currentExportChild = child;
     let err = '';
     let lastMilestone = -1;
@@ -555,8 +582,9 @@ export async function renderVoiceCleanupPreview(
   onProgress(0, '');
   previewCancelRequested = false;
 
+  const spawnCwd = voiceCleanupSpawnCwd();
   return await new Promise<string>((resolve, reject) => {
-    const child = spawn(ffmpeg, args);
+    const child = spawn(ffmpeg, args, spawnCwd ? { cwd: spawnCwd } : undefined);
     currentPreviewChild = child;
     let err = '';
     child.stderr.on('data', (d) => {

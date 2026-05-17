@@ -12,7 +12,3 @@ export function findRnnoiseModel(): string | null {
   cached = fs.existsSync(candidate) ? candidate : null;
   return cached;
 }
-
-export function escapeFilterPath(p: string): string {
-  return p.replace(/\\/g, '/').replace(/:/g, '\\:');
-}
