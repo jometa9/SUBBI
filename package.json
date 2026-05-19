@@ -9,8 +9,9 @@
     "setup:models": "node scripts/setup-models.js",
     "dev": "concurrently -k -n vite,electron -c blue,magenta \"npm:dev:vite\" \"npm:dev:electron-wait\"",
     "dev:vite": "vite",
-    "dev:electron-wait": "wait-on http://localhost:5180 && npm run dev:electron",
-    "dev:electron": "tsc -p electron/tsconfig.json && node scripts/run-electron.js",
+    "dev:electron-wait": "wait-on http://localhost:5180 && npm run dev:electron-only",
+    "dev:electron-only": "tsc -p electron/tsconfig.json && node scripts/run-electron.js",
+    "dev:electron": "concurrently -k -n vite,electron -c blue,magenta \"npm:dev:vite\" \"npm:dev:electron-wait\"",
     "build": "vite build && tsc -p electron/tsconfig.json",
     "package": "npm run build && electron-builder",
     "typecheck": "tsc --noEmit && tsc -p electron/tsconfig.json --noEmit"
