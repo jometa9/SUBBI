@@ -118,22 +118,22 @@ ipcMain.handle('subbi:checkModel', async (_e, model: WhisperModel) => {
   return hasModel(model);
 });
 
-ipcMain.handle('subbi:downloadModel', async (_e, model: WhisperModel) => {
+ipcMain.handle('subbi:downloadModel', async (_e, model: WhisperModel, jobId?: string) => {
   await downloadModel(model, (pct, line) => {
-    mainWindow?.webContents.send('subbi:progress', { kind: 'modelDownload', model, pct, line });
+    mainWindow?.webContents.send('subbi:progress', { kind: 'modelDownload', jobId, model, pct, line });
   });
   return true;
 });
 
-ipcMain.handle('subbi:transcribe', async (_e, opts: TranscribeOptions) => {
+ipcMain.handle('subbi:transcribe', async (_e, opts: TranscribeOptions, jobId?: string) => {
   return await transcribe(opts, (pct, line) => {
-    mainWindow?.webContents.send('subbi:progress', { kind: 'transcribe', pct, line });
+    mainWindow?.webContents.send('subbi:progress', { kind: 'transcribe', jobId, pct, line });
   });
 });
 
-ipcMain.handle('subbi:burn', async (_e, opts: BurnOptions) => {
+ipcMain.handle('subbi:burn', async (_e, opts: BurnOptions, jobId?: string) => {
   return await burn(opts, (pct, line) => {
-    mainWindow?.webContents.send('subbi:progress', { kind: 'burn', pct, line });
+    mainWindow?.webContents.send('subbi:progress', { kind: 'burn', jobId, pct, line });
   });
 });
 
@@ -145,30 +145,30 @@ ipcMain.handle('subbi:extractPeaks', async (_e, opts: { videoPath: string; targe
   return await extractPeaks(opts.videoPath, opts.targetBins ?? 2000, opts.binsPerSecond);
 });
 
-ipcMain.handle('subbi:cutSilences', async (_e, opts: CutSilencesOptions) => {
+ipcMain.handle('subbi:cutSilences', async (_e, opts: CutSilencesOptions, jobId?: string) => {
   return await cutSilences(opts, (pct, line) => {
-    mainWindow?.webContents.send('subbi:progress', { kind: 'cut', pct, line });
+    mainWindow?.webContents.send('subbi:progress', { kind: 'cut', jobId, pct, line });
   });
 });
 
-ipcMain.handle('subbi:exportVideo', async (_e, opts: ExportOptions) => {
+ipcMain.handle('subbi:exportVideo', async (_e, opts: ExportOptions, jobId: string) => {
   return await exportVideo(opts, (pct, line) => {
-    mainWindow?.webContents.send('subbi:progress', { kind: 'export', pct, line });
-  });
+    mainWindow?.webContents.send('subbi:progress', { kind: 'export', jobId, pct, line });
+  }, jobId);
 });
 
-ipcMain.handle('subbi:cancelExport', async () => {
-  return cancelExport();
+ipcMain.handle('subbi:cancelExport', async (_e, jobId: string) => {
+  return cancelExport(jobId);
 });
 
-ipcMain.handle('subbi:renderVoiceCleanupPreview', async (_e, opts: { videoPath: string; intensity: VoiceCleanupIntensity }) => {
+ipcMain.handle('subbi:renderVoiceCleanupPreview', async (_e, opts: { videoPath: string; intensity: VoiceCleanupIntensity }, jobId: string) => {
   return await renderVoiceCleanupPreview(opts, (pct, line) => {
-    mainWindow?.webContents.send('subbi:progress', { kind: 'vcPreview', pct, line });
-  });
+    mainWindow?.webContents.send('subbi:progress', { kind: 'vcPreview', jobId, pct, line });
+  }, jobId);
 });
 
-ipcMain.handle('subbi:cancelVoiceCleanupPreview', async () => {
-  return cancelVoiceCleanupPreview();
+ipcMain.handle('subbi:cancelVoiceCleanupPreview', async (_e, jobId: string) => {
+  return cancelVoiceCleanupPreview(jobId);
 });
 
 ipcMain.handle('subbi:writeSrt', async (_e, opts: { srtPath: string; content: string }) => {

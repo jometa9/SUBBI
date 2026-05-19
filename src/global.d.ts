@@ -25,12 +25,12 @@ type SubbiDetectSilencesResult = {
 };
 
 type SubbiProgressEvent =
-  | { kind: 'transcribe'; pct: number; line: string }
-  | { kind: 'burn'; pct: number; line: string }
-  | { kind: 'cut'; pct: number; line: string }
-  | { kind: 'export'; pct: number; line: string }
-  | { kind: 'vcPreview'; pct: number; line: string }
-  | { kind: 'modelDownload'; model: 'tiny' | 'medium'; pct: number; line: string };
+  | { kind: 'transcribe'; jobId?: string; pct: number; line: string }
+  | { kind: 'burn'; jobId?: string; pct: number; line: string }
+  | { kind: 'cut'; jobId?: string; pct: number; line: string }
+  | { kind: 'export'; jobId?: string; pct: number; line: string }
+  | { kind: 'vcPreview'; jobId?: string; pct: number; line: string }
+  | { kind: 'modelDownload'; jobId?: string; model: 'tiny' | 'medium'; pct: number; line: string };
 
 type SubbiBgAudioExport = {
   path: string;
@@ -51,14 +51,14 @@ interface SubbiAPI {
     model: 'tiny' | 'medium';
     engine?: 'local' | 'openai';
     apiKey?: string;
-  }): Promise<{ srtPath: string; srt: string; words?: { word: string; start: number; end: number }[] }>;
+  }, jobId?: string): Promise<{ srtPath: string; srt: string; words?: { word: string; start: number; end: number }[] }>;
   checkModel(model: 'tiny' | 'medium'): Promise<boolean>;
-  downloadModel(model: 'tiny' | 'medium'): Promise<boolean>;
-  burn(opts: { videoPath: string; srtPath: string; style: SubbiStyle }):
+  downloadModel(model: 'tiny' | 'medium', jobId?: string): Promise<boolean>;
+  burn(opts: { videoPath: string; srtPath: string; style: SubbiStyle }, jobId?: string):
     Promise<string>;
   detectSilences(opts: { videoPath: string; thresholdDb?: number; minDurSec?: number }):
     Promise<SubbiDetectSilencesResult>;
-  cutSilences(opts: { videoPath: string; keepRanges: SubbiSilenceRange[] }):
+  cutSilences(opts: { videoPath: string; keepRanges: SubbiSilenceRange[] }, jobId?: string):
     Promise<string>;
   exportVideo(opts: {
     videoPath: string;
@@ -78,10 +78,10 @@ interface SubbiAPI {
     videoWidth?: number;
     videoHeight?: number;
     bgAudio?: SubbiBgAudioExport | null;
-  }): Promise<string>;
-  cancelExport(): Promise<boolean>;
-  renderVoiceCleanupPreview(opts: { videoPath: string; intensity: 'light' | 'medium' | 'strong' }): Promise<string>;
-  cancelVoiceCleanupPreview(): Promise<boolean>;
+  }, jobId: string): Promise<string>;
+  cancelExport(jobId: string): Promise<boolean>;
+  renderVoiceCleanupPreview(opts: { videoPath: string; intensity: 'light' | 'medium' | 'strong' }, jobId: string): Promise<string>;
+  cancelVoiceCleanupPreview(jobId: string): Promise<boolean>;
   extractPeaks(opts: { videoPath: string; targetBins?: number; binsPerSecond?: number }):
     Promise<{ peaks: number[]; duration: number; sampleRate: number }>;
   writeSrt(opts: { srtPath: string; content: string }): Promise<string>;

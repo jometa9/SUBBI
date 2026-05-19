@@ -25,12 +25,23 @@ export function buildVoiceCleanupChain(intensity: VoiceCleanupIntensity): string
   return `highpass=f=85,${arnndn}afftdn=nf=-25:nr=18,acompressor=threshold=-20dB:ratio=3:attack=8:release=200:makeup=3,loudnorm=I=-16:TP=-1.5:LRA=11`;
 }
 
-let currentExportChild: ChildProcess | null = null;
-let cancelRequested = false;
+type ExportJob = { child: ChildProcess | null; cancelRequested: boolean };
+const exportJobs = new Map<string, ExportJob>();
 
-export function cancelExport(): boolean {
-  cancelRequested = true;
-  const child = currentExportChild;
+function getOrCreateExportJob(jobId: string): ExportJob {
+  let j = exportJobs.get(jobId);
+  if (!j) {
+    j = { child: null, cancelRequested: false };
+    exportJobs.set(jobId, j);
+  }
+  return j;
+}
+
+export function cancelExport(jobId: string): boolean {
+  const j = exportJobs.get(jobId);
+  if (!j) return false;
+  j.cancelRequested = true;
+  const child = j.child;
   if (child && !child.killed) {
     try { child.kill('SIGKILL'); } catch {}
     return true;
@@ -288,8 +299,12 @@ function buildCropFilter(c: CropNormalized, bgColor: 'black' | 'white' = 'black'
 
 export async function exportVideo(
   opts: ExportOptions,
-  onProgress: (pct: number, line: string) => void
+  onProgress: (pct: number, line: string) => void,
+  jobId: string
 ): Promise<string> {
+  const job = getOrCreateExportJob(jobId);
+  job.cancelRequested = false;
+  job.child = null;
   const ffmpeg = findFfmpeg();
 
   const ext = path.extname(opts.videoPath) || '.mp4';
@@ -492,15 +507,15 @@ export async function exportVideo(
   let totalSec: number | null = null;
   onProgress(0, 'evt:export.starting');
 
-  if (cancelRequested) {
-    cancelRequested = false;
+  if (job.cancelRequested) {
+    exportJobs.delete(jobId);
     throw new Error('evt:export.cancelled');
   }
 
   const spawnCwd = wantsVoiceCleanup ? voiceCleanupSpawnCwd() : undefined;
   return await new Promise<string>((resolve, reject) => {
     const child = spawn(ffmpeg, args, spawnCwd ? { cwd: spawnCwd } : undefined);
-    currentExportChild = child;
+    job.child = child;
     let err = '';
     let lastMilestone = -1;
     child.stderr.on('data', (d) => {
@@ -525,23 +540,25 @@ export async function exportVideo(
       }
     });
     child.on('error', (e) => {
-      currentExportChild = null;
+      job.child = null;
+      exportJobs.delete(jobId);
       reject(e);
     });
     child.on('close', (code, signal) => {
-      currentExportChild = null;
+      job.child = null;
       if (assPath) {
         try { fs.unlinkSync(assPath); } catch {}
       }
       if (filterScriptPath) {
         try { fs.unlinkSync(filterScriptPath); } catch {}
       }
-      if (cancelRequested) {
-        cancelRequested = false;
+      if (job.cancelRequested) {
+        exportJobs.delete(jobId);
         try { if (fs.existsSync(outPath)) fs.unlinkSync(outPath); } catch {}
         reject(new Error('evt:export.cancelled'));
         return;
       }
+      exportJobs.delete(jobId);
       if (code === 0) {
         onProgress(100, 'evt:export.done');
         resolve(outPath);
@@ -558,12 +575,23 @@ export async function exportVideo(
   });
 }
 
-let currentPreviewChild: ChildProcess | null = null;
-let previewCancelRequested = false;
+type PreviewJob = { child: ChildProcess | null; cancelRequested: boolean };
+const previewJobs = new Map<string, PreviewJob>();
 
-export function cancelVoiceCleanupPreview(): boolean {
-  previewCancelRequested = true;
-  const child = currentPreviewChild;
+function getOrCreatePreviewJob(jobId: string): PreviewJob {
+  let j = previewJobs.get(jobId);
+  if (!j) {
+    j = { child: null, cancelRequested: false };
+    previewJobs.set(jobId, j);
+  }
+  return j;
+}
+
+export function cancelVoiceCleanupPreview(jobId: string): boolean {
+  const j = previewJobs.get(jobId);
+  if (!j) return false;
+  j.cancelRequested = true;
+  const child = j.child;
   if (child && !child.killed) {
     try { child.kill('SIGKILL'); } catch {}
     return true;
@@ -573,8 +601,12 @@ export function cancelVoiceCleanupPreview(): boolean {
 
 export async function renderVoiceCleanupPreview(
   opts: { videoPath: string; intensity: VoiceCleanupIntensity },
-  onProgress: (pct: number, line: string) => void
+  onProgress: (pct: number, line: string) => void,
+  jobId: string
 ): Promise<string> {
+  const job = getOrCreatePreviewJob(jobId);
+  job.cancelRequested = false;
+  job.child = null;
   const ffmpeg = findFfmpeg();
   const chain = buildVoiceCleanupChain(opts.intensity);
   const tmpDir = path.join(os.tmpdir(), 'subbi');
@@ -595,12 +627,11 @@ export async function renderVoiceCleanupPreview(
 
   let totalSec: number | null = null;
   onProgress(0, '');
-  previewCancelRequested = false;
 
   const spawnCwd = voiceCleanupSpawnCwd();
   return await new Promise<string>((resolve, reject) => {
     const child = spawn(ffmpeg, args, spawnCwd ? { cwd: spawnCwd } : undefined);
-    currentPreviewChild = child;
+    job.child = child;
     let err = '';
     child.stderr.on('data', (d) => {
       const s = d.toString();
@@ -614,15 +645,16 @@ export async function renderVoiceCleanupPreview(
         }
       }
     });
-    child.on('error', (e) => { currentPreviewChild = null; reject(e); });
+    child.on('error', (e) => { job.child = null; previewJobs.delete(jobId); reject(e); });
     child.on('close', (code, signal) => {
-      currentPreviewChild = null;
-      if (previewCancelRequested) {
-        previewCancelRequested = false;
+      job.child = null;
+      if (job.cancelRequested) {
+        previewJobs.delete(jobId);
         try { if (fs.existsSync(outPath)) fs.unlinkSync(outPath); } catch {}
         reject(new Error('evt:export.cancelled'));
         return;
       }
+      previewJobs.delete(jobId);
       if (code === 0) {
         onProgress(100, '');
         resolve(outPath);

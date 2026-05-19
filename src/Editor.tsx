@@ -1072,10 +1072,12 @@ export type EditorProps = {
   onThemePrefChange: (pref: ThemePref) => void;
   onVideoPathChange: (path: string | null) => void;
   onDropPaths?: (paths: string[]) => boolean;
+  tabId: string;
+  isActive: boolean;
 };
 
 export default function Editor(props: EditorProps) {
-  const { initialVideoPath, uiLang, onUiLangChange, themePref, resolvedTheme, onThemePrefChange, onVideoPathChange, onDropPaths } = props;
+  const { initialVideoPath, uiLang, onUiLangChange, themePref, resolvedTheme, onThemePrefChange, onVideoPathChange, onDropPaths, tabId, isActive } = props;
   const initial = useMemo(loadSettings, []);
   const [videoPath, setVideoPath] = useState<string | null>(null);
   const [videoUrl, setVideoUrl] = useState<string | null>(null);
@@ -1348,7 +1350,7 @@ export default function Editor(props: EditorProps) {
       const out = await window.subbi.renderVoiceCleanupPreview({
         videoPath,
         intensity: voiceCleanupIntensity,
-      });
+      }, `${tabId}:vcPreview`);
       const v = videoRef.current;
       const t = v?.currentTime ?? 0;
       const wasPaused = v?.paused ?? true;
@@ -1379,7 +1381,7 @@ export default function Editor(props: EditorProps) {
   }
 
   async function cancelVoiceCleanupPreview() {
-    try { await window.subbi.cancelVoiceCleanupPreview(); } catch {}
+    try { await window.subbi.cancelVoiceCleanupPreview(`${tabId}:vcPreview`); } catch {}
     setVcPreviewBusy(false);
   }
   function resetFilters() {
@@ -1602,6 +1604,7 @@ export default function Editor(props: EditorProps) {
   useEffect(() => { setStorageStats(autosaveStats(videoPath)); }, [videoPath]);
 
   useEffect(() => {
+    if (!isActive) return;
     const onContextMenu = (e: MouseEvent) => e.preventDefault();
     const onKey = (e: KeyboardEvent) => {
       const k = e.key.toLowerCase();
@@ -1626,7 +1629,7 @@ export default function Editor(props: EditorProps) {
       window.removeEventListener('keydown', onKey, { capture: true } as any);
       document.removeEventListener('selectstart', onSelectStart);
     };
-  }, []);
+  }, [isActive]);
 
   const t = (k: keyof typeof TRANSLATIONS['en']) => TRANSLATIONS[uiLang][k] ?? TRANSLATIONS.en[k];
   const tEvt = (raw: string): string => {
@@ -1648,6 +1651,12 @@ export default function Editor(props: EditorProps) {
   const logStickRef = useRef(true);
   const exportCancelRef = useRef(false);
   const [cancellingExport, setCancellingExport] = useState(false);
+
+  useEffect(() => {
+    if (isActive) return;
+    const v = videoRef.current;
+    if (v && !v.paused) { try { v.pause(); } catch {} }
+  }, [isActive]);
 
   const cues = useMemo(() => {
     if (!rawCues) return null;
@@ -2000,6 +2009,7 @@ export default function Editor(props: EditorProps) {
   }, [timelineZoom, videoDuration, currentTime]);
 
   useEffect(() => {
+    if (!isActive) return;
     function onKey(e: KeyboardEvent) {
       if (!videoUrl) return;
       const tag = (e.target as HTMLElement)?.tagName;
@@ -2015,7 +2025,7 @@ export default function Editor(props: EditorProps) {
     }
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [videoUrl, videoDuration]);
+  }, [videoUrl, videoDuration, isActive]);
   function seekTo(time: number) {
     const v = videoRef.current;
     if (!v) return;
@@ -2024,6 +2034,7 @@ export default function Editor(props: EditorProps) {
 
   useEffect(() => {
     const off = window.subbi.onProgress((evt) => {
+      if (evt.jobId && !evt.jobId.startsWith(tabId + ':')) return;
       const msg = tEvt(evt.line);
       if (evt.kind === 'transcribe') {
         setProc(p => p.phase === 'transcribing'
@@ -2038,7 +2049,7 @@ export default function Editor(props: EditorProps) {
       }
     });
     return off;
-  }, [uiLang]);
+  }, [uiLang, tabId]);
 
   useEffect(() => {
     if (!openSections.transcription) return;
@@ -2059,7 +2070,7 @@ export default function Editor(props: EditorProps) {
           return;
         }
         setModelStatus(s => ({ ...s, [whisper]: { phase: 'downloading', pct: 0 } }));
-        await window.subbi.downloadModel(whisper);
+        await window.subbi.downloadModel(whisper, `${tabId}:modelDownload:${whisper}`);
         if (cancelled) return;
         setModelStatus(s => ({ ...s, [whisper]: { phase: 'present', pct: 100 } }));
       } catch (err: any) {
@@ -2376,7 +2387,7 @@ export default function Editor(props: EditorProps) {
         model: whisper,
         engine,
         apiKey: engine === 'openai' ? openaiApiKey.trim() : undefined,
-      });
+      }, `${tabId}:transcribe`);
       setSrtPath(r.srtPath);
       setRawCues(parseSrt(r.srt));
       setWordsTs(r.words && r.words.length > 0 ? r.words : null);
@@ -2526,7 +2537,7 @@ export default function Editor(props: EditorProps) {
           videoWidth: videoW || undefined,
           videoHeight: videoH || undefined,
           bgAudio: segBg,
-        });
+        }, `${tabId}:export`);
         outputs.push(segOut);
         setProc(p => p.phase === 'exporting'
           ? { ...p, pct: Math.min(100, ((i + 1) / total) * 100) }
@@ -2549,7 +2560,7 @@ export default function Editor(props: EditorProps) {
   function cancelExportNow() {
     exportCancelRef.current = true;
     setCancellingExport(true);
-    try { window.subbi.cancelExport?.(); } catch {}
+    try { window.subbi.cancelExport?.(`${tabId}:export`); } catch {}
   }
 
   const _videoNativeW = videoRef.current?.videoWidth ?? 0;

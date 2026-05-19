@@ -111,13 +111,7 @@ export default function App() {
     saveTabs({ tabs, activeTabId });
   }, [tabs, activeTabId]);
 
-  const activeTab = tabs.find(t => t.id === activeTabId) ?? tabs[0];
-
   const t = (k: string) => TRANSLATIONS[uiLang][k] ?? TRANSLATIONS.en[k];
-
-  function handleVideoPathChange(path: string | null) {
-    setTabs(prev => prev.map(t => (t.id === activeTabId ? { ...t, videoPath: path } : t)));
-  }
 
   function handleNewTab() {
     if (tabs.length >= MAX_TABS) return;
@@ -201,17 +195,33 @@ export default function App() {
           maxReached: t('tabMaxReached').replace('{n}', String(MAX_TABS)),
         }}
       />
-      <Editor
-        key={activeTab.id}
-        initialVideoPath={activeTab.videoPath}
-        uiLang={uiLang}
-        onUiLangChange={setUiLang}
-        themePref={themePref}
-        resolvedTheme={resolvedTheme}
-        onThemePrefChange={setThemePref}
-        onVideoPathChange={handleVideoPathChange}
-        onDropPaths={handleDropPaths}
-      />
+      {tabs.map(tab => {
+        const isActive = tab.id === activeTabId;
+        return (
+          <div
+            key={tab.id}
+            className="tab-editor-host"
+            style={{
+              display: isActive ? 'contents' : 'none',
+            }}
+          >
+            <Editor
+              tabId={tab.id}
+              isActive={isActive}
+              initialVideoPath={tab.videoPath}
+              uiLang={uiLang}
+              onUiLangChange={setUiLang}
+              themePref={themePref}
+              resolvedTheme={resolvedTheme}
+              onThemePrefChange={setThemePref}
+              onVideoPathChange={(path) => {
+                setTabs(prev => prev.map(t => (t.id === tab.id ? { ...t, videoPath: path } : t)));
+              }}
+              onDropPaths={handleDropPaths}
+            />
+          </div>
+        );
+      })}
     </div>
   );
 }
