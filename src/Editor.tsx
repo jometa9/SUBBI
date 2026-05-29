@@ -84,6 +84,7 @@ export const TRANSLATIONS: Record<UiLang, Record<string, string>> = {
     font: 'Font', size: 'Size', vertical: 'Vertical', horizontal: 'Horizontal',
     color: 'Color', outline: 'Outline', outlineWidth: 'Outline width',
     styleApplyToAll: 'Apply to all segments',
+    subtitlesEnabled: 'Show and export subtitles',
     textCase: 'Case', caseAsIs: 'As is', caseUpper: 'UPPERCASE', caseLower: 'lowercase',
     maxPerLine: 'Max words',
     couldNotReadPath: 'Could not read file path. Try "Open video".',
@@ -307,6 +308,7 @@ export const TRANSLATIONS: Record<UiLang, Record<string, string>> = {
     font: 'Fuente', size: 'Tamaño', vertical: 'Vertical', horizontal: 'Horizontal',
     color: 'Color', outline: 'Contorno', outlineWidth: 'Grosor del contorno',
     styleApplyToAll: 'Aplicar a todos los segmentos',
+    subtitlesEnabled: 'Mostrar y exportar subtítulos',
     textCase: 'Mayús/minús', caseAsIs: 'Tal cual', caseUpper: 'MAYÚSCULAS', caseLower: 'minúsculas',
     maxPerLine: 'Máx palabras',
     couldNotReadPath: 'No se pudo leer la ruta del archivo. Probá con "Abrir video".',
@@ -718,6 +720,7 @@ type ProjectState = {
   cropApplyToAll?: boolean;
   styleByZone?: Record<string, SubtitleStyle>;
   styleApplyToAll?: boolean;
+  subtitlesEnabled?: boolean;
   excludedSegments?: Record<string, boolean>;
   currentTime?: number;
   timelineZoom?: number;
@@ -1097,6 +1100,7 @@ export default function Editor(props: EditorProps) {
   const [srtPath, setSrtPath] = useState<string | null>(null);
   const [rawCues, setRawCues] = useState<Cue[] | null>(null);
   const [wordsTs, setWordsTs] = useState<WordTs[] | null>(null);
+  const [subtitlesEnabled, setSubtitlesEnabled] = useState<boolean>(true);
   const [editingCue, setEditingCue] = useState<Cue | null>(null);
   const [editingText, setEditingText] = useState<string>('');
 
@@ -2115,7 +2119,7 @@ export default function Editor(props: EditorProps) {
         cropEnabled, crop, cropBgColor, aspectId, saturation, opacity, opacityBgColor, volumeDb, noiseGateDb, noiseGateEnabled,
         voiceCleanupEnabled, voiceCleanupIntensity,
         srtPath, rawCues, wordsTs, style, language, model,
-        splitMarkers, cropByZone, cropApplyToAll, styleByZone, styleApplyToAll, excludedSegments,
+        splitMarkers, cropByZone, cropApplyToAll, styleByZone, styleApplyToAll, subtitlesEnabled, excludedSegments,
         currentTime, timelineZoom, previewZoom, volume, muted, playbackRate,
         timelapseEnabled, timelapseTargetSec, timelapseMuteOriginal,
         bgAudio: bgAudio ? bgAudioToPersist(bgAudio) : null,
@@ -2156,6 +2160,7 @@ export default function Editor(props: EditorProps) {
       setCropApplyToAll(saved.cropApplyToAll ?? true);
       setStyleByZone(saved.styleByZone ?? {});
       setStyleApplyToAll(saved.styleApplyToAll ?? true);
+      setSubtitlesEnabled(saved.subtitlesEnabled ?? true);
       setExcludedSegments(saved.excludedSegments ?? {});
       if (saved.style) setStyle({ ...DEFAULT_STYLE, ...saved.style });
       if (saved.language) setLanguage(saved.language);
@@ -2205,6 +2210,7 @@ export default function Editor(props: EditorProps) {
       setCropApplyToAll(true);
       setStyleByZone({});
       setStyleApplyToAll(true);
+      setSubtitlesEnabled(true);
       setExcludedSegments({});
       setCurrentTime(0);
       setTimelineZoom(1);
@@ -2228,7 +2234,7 @@ export default function Editor(props: EditorProps) {
         cropEnabled, crop, cropBgColor, aspectId, saturation, opacity, opacityBgColor, volumeDb, noiseGateDb, noiseGateEnabled,
         voiceCleanupEnabled, voiceCleanupIntensity,
         srtPath, rawCues, wordsTs, style, language, model,
-        splitMarkers, cropByZone, cropApplyToAll, styleByZone, styleApplyToAll, excludedSegments,
+        splitMarkers, cropByZone, cropApplyToAll, styleByZone, styleApplyToAll, subtitlesEnabled, excludedSegments,
         currentTime, timelineZoom, previewZoom, volume, muted, playbackRate,
         timelapseEnabled, timelapseTargetSec, timelapseMuteOriginal,
         bgAudio: bgAudio ? bgAudioToPersist(bgAudio) : null,
@@ -2252,7 +2258,7 @@ export default function Editor(props: EditorProps) {
       cropEnabled, crop, cropBgColor, aspectId, saturation, opacity, opacityBgColor, volumeDb, noiseGateDb, noiseGateEnabled,
       voiceCleanupEnabled, voiceCleanupIntensity,
       srtPath, rawCues, style, language, model,
-      splitMarkers, cropByZone, cropApplyToAll, styleByZone, styleApplyToAll, excludedSegments,
+      splitMarkers, cropByZone, cropApplyToAll, styleByZone, styleApplyToAll, subtitlesEnabled, excludedSegments,
       currentTime, timelineZoom, previewZoom, volume, muted, playbackRate,
       timelapseEnabled, timelapseTargetSec, timelapseMuteOriginal, bgAudio]);
 
@@ -2414,7 +2420,7 @@ export default function Editor(props: EditorProps) {
   async function exportNow() {
     if (!videoPath) return;
     const hasSilence = enabledCount > 0;
-    const hasSubs = !!(srtPath && cues && cues.length > 0);
+    const hasSubs = !!(subtitlesEnabled && srtPath && cues && cues.length > 0);
     const hasCrop = cropEnabled;
     const hasVolume = Math.abs(volumeDb) > 0.01;
     const hasGate = noiseGateEnabled && noiseGateDb < -0.01;
@@ -2985,6 +2991,7 @@ export default function Editor(props: EditorProps) {
                   style={{ display: 'none' }}
                 />
               )}
+              {subtitlesEnabled && (
               <div
                 className={
                   'subtitle-overlay'
@@ -3031,6 +3038,7 @@ export default function Editor(props: EditorProps) {
                   previewText
                 )}
               </div>
+              )}
               {cropEnabled && cropEditing && (
                 <CropOverlay
                   videoEl={videoRef.current}
@@ -4150,6 +4158,14 @@ export default function Editor(props: EditorProps) {
             )}
           </button>
           <div className="pr-section-body">
+            <div className="pr-row">
+              <label className="pr-check">
+                <input type="checkbox"
+                       checked={subtitlesEnabled}
+                       onChange={e => setSubtitlesEnabled(e.target.checked)} />
+                <span>{t('subtitlesEnabled')}</span>
+              </label>
+            </div>
             {splitMarkers.length > 0 && (
               <div className="pr-row">
                 <label className="pr-check">
