@@ -1302,6 +1302,8 @@ input[type="range"].pr-range-flex { flex: 1 1 auto; min-width: 0; }
 .vc-split-btn { color: var(--c-danger-mid); }
 .vc-split-btn:hover { color: var(--c-danger-light); }
 .vc-split-btn:disabled { color: var(--c-text-fainter); cursor: not-allowed; }
+.vc-split-cancel { color: var(--c-warn); display: flex; align-items: center; }
+.vc-split-cancel:hover { color: var(--c-warn); opacity: 0.8; }
 .vc-split-remove {
   color: var(--c-warn);
   width: auto;

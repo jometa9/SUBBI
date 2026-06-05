@@ -173,6 +173,7 @@ export const TRANSLATIONS: Record<UiLang, Record<string, string>> = {
     fwd5s: '+5s',
     resetAudio: 'Reset',
     splitHere: 'Split here',
+    cancelSplitHere: 'Cancel split here',
     removeSplit: 'Remove split',
     splitsBadge: 'splits',
     cropZoneHere: 'New crop zone here',
@@ -397,6 +398,7 @@ export const TRANSLATIONS: Record<UiLang, Record<string, string>> = {
     fwd5s: '+5s',
     resetAudio: 'Restablecer',
     splitHere: 'Cortar aquí',
+    cancelSplitHere: 'Cancelar corte aquí',
     removeSplit: 'Quitar corte',
     splitsBadge: 'cortes',
     cropZoneHere: 'Nueva zona de crop aquí',
@@ -1221,6 +1223,28 @@ export default function Editor(props: EditorProps) {
     });
     setSelectedMarker(null);
   }
+
+  function removeSplitAtCurrent() {
+    const marker = splitMarkers.find(m => Math.abs(m - currentTime) < 0.5);
+    if (marker == null) return;
+    const targetKey = marker.toFixed(3);
+    setSplitMarkers(prev => prev.filter(m => Math.abs(m - marker) > 1e-6));
+    setCropByZone(prev => {
+      if (!prev[targetKey]) return prev;
+      const next = { ...prev };
+      delete next[targetKey];
+      return next;
+    });
+    setStyleByZone(prev => {
+      if (!prev[targetKey]) return prev;
+      const next = { ...prev };
+      delete next[targetKey];
+      return next;
+    });
+    if (selectedMarker != null && Math.abs(selectedMarker - marker) < 1e-6) setSelectedMarker(null);
+  }
+
+  const nearbyMarker = splitMarkers.find(m => Math.abs(m - currentTime) < 0.5) ?? null;
 
   const splitSegments = useMemo(() => {
     const dur = videoDuration || 0;
@@ -2924,7 +2948,7 @@ export default function Editor(props: EditorProps) {
           const cropApplied = cropEnabled && !cropEditing && videoW > 0 && videoH > 0;
           let croppedWrapW = 0, croppedWrapH = 0;
           if (cropApplied && stageSize.w > 0 && stageSize.h > 0) {
-            const sliceAspect = (crop.width * videoW) / (crop.height * videoH);
+            const sliceAspect = (effectiveCrop.width * videoW) / (effectiveCrop.height * videoH);
             const stageAspect = stageSize.w / stageSize.h;
             if (sliceAspect > stageAspect) {
               croppedWrapW = stageSize.w;
@@ -2943,8 +2967,8 @@ export default function Editor(props: EditorProps) {
           const wrapStyle: React.CSSProperties | undefined = previewZoom !== 1
             ? (cropApplied
                 ? {
-                    width: `${baseW * crop.width * previewZoom}px`,
-                    height: `${baseH * crop.height * previewZoom}px`,
+                    width: `${baseW * effectiveCrop.width * previewZoom}px`,
+                    height: `${baseH * effectiveCrop.height * previewZoom}px`,
                     overflow: 'hidden',
                     backgroundColor: wrapBg,
                   }
@@ -2960,10 +2984,10 @@ export default function Editor(props: EditorProps) {
           const opacityCss = opacityActive ? opacity / 100 : undefined;
           const videoStyle: React.CSSProperties | undefined = cropApplied ? {
             position: 'absolute',
-            top: `${-crop.y * 100 / crop.height}%`,
-            left: `${-crop.x * 100 / crop.width}%`,
-            width: `${100 / crop.width}%`,
-            height: `${100 / crop.height}%`,
+            top: `${-effectiveCrop.y * 100 / effectiveCrop.height}%`,
+            left: `${-effectiveCrop.x * 100 / effectiveCrop.width}%`,
+            width: `${100 / effectiveCrop.width}%`,
+            height: `${100 / effectiveCrop.height}%`,
             maxWidth: 'none',
             maxHeight: 'none',
             filter: filterCss,
@@ -3088,20 +3112,40 @@ export default function Editor(props: EditorProps) {
               <span className="vc-time-sep"> / </span>
               <span className="vc-time-tot">{fmtTime(videoDuration)}</span>
             </div>
-            <button
-              className="vc-btn vc-split-btn"
-              onClick={addSplitAtCurrent}
-              disabled={!videoDuration || isEditBusy}
-              title={t('splitHere')}
-            >
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <circle cx="6" cy="6" r="3"/>
-                <circle cx="6" cy="18" r="3"/>
-                <line x1="20" y1="4" x2="8.12" y2="15.88"/>
-                <line x1="14.47" y1="14.48" x2="20" y2="20"/>
-                <line x1="8.12" y1="8.12" x2="12" y2="12"/>
-              </svg>
-            </button>
+            {nearbyMarker != null ? (
+              <button
+                className="vc-btn vc-split-btn vc-split-cancel"
+                onClick={removeSplitAtCurrent}
+                disabled={!videoDuration || isEditBusy}
+                title={t('cancelSplitHere')}
+              >
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <circle cx="6" cy="6" r="3"/>
+                  <circle cx="6" cy="18" r="3"/>
+                  <line x1="20" y1="4" x2="8.12" y2="15.88"/>
+                  <line x1="14.47" y1="14.48" x2="20" y2="20"/>
+                  <line x1="8.12" y1="8.12" x2="12" y2="12"/>
+                </svg>
+                <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor" style={{marginLeft: 2}}>
+                  <path d="M18.3 5.71L12 12.01l-6.3-6.3-1.4 1.4 6.29 6.3-6.29 6.29 1.4 1.42 6.3-6.3 6.3 6.3 1.4-1.42-6.29-6.29 6.29-6.3z"/>
+                </svg>
+              </button>
+            ) : (
+              <button
+                className="vc-btn vc-split-btn"
+                onClick={addSplitAtCurrent}
+                disabled={!videoDuration || isEditBusy}
+                title={t('splitHere')}
+              >
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <circle cx="6" cy="6" r="3"/>
+                  <circle cx="6" cy="18" r="3"/>
+                  <line x1="20" y1="4" x2="8.12" y2="15.88"/>
+                  <line x1="14.47" y1="14.48" x2="20" y2="20"/>
+                  <line x1="8.12" y1="8.12" x2="12" y2="12"/>
+                </svg>
+              </button>
+            )}
             {selectedMarker != null && (
               <button
                 className="vc-btn vc-split-remove"
