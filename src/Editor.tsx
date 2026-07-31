@@ -57,6 +57,16 @@ const ASPECT_PRESETS: AspectPreset[] = [
   { id: '4:3', label: '4:3', ratio: 4 / 3 },
 ];
 
+type BlackScreenPreset = { id: string; label: string; w: number; h: number };
+const BLACK_SCREEN_PRESETS: BlackScreenPreset[] = [
+  { id: '9:16', label: '9:16 · 1080×1920', w: 1080, h: 1920 },
+  { id: '1:1', label: '1:1 · 1080×1080', w: 1080, h: 1080 },
+  { id: '16:9', label: '16:9 · 1920×1080', w: 1920, h: 1080 },
+  { id: '4:5', label: '4:5 · 1080×1350', w: 1080, h: 1350 },
+  { id: '4:3', label: '4:3 · 1440×1080', w: 1440, h: 1080 },
+];
+const DEFAULT_BLACK_SCREEN_ASPECT = '9:16';
+
 export type UiLang = 'en' | 'es';
 
 export const TRANSLATIONS: Record<UiLang, Record<string, string>> = {
@@ -197,6 +207,11 @@ export const TRANSLATIONS: Record<UiLang, Record<string, string>> = {
     filterSaturation: 'Saturation',
     filterOpacity: 'Opacity',
     filterOpacityBg: 'Background',
+    blackScreenSection: 'Black screen (audio only)',
+    blackScreenEnable: 'Enable black screen',
+    blackScreenFormat: 'Format',
+    blackScreenBg: 'Background',
+    blackScreenHint: 'Replaces the image with a solid background at the chosen size. Audio, cuts and subtitles are kept — ideal for audio-only videos with subtitles.',
     filterSpeed: 'Speed',
     previewSpeed: 'Preview speed',
     previewSpeedTitle: 'Preview playback speed (does not affect export)',
@@ -422,6 +437,11 @@ export const TRANSLATIONS: Record<UiLang, Record<string, string>> = {
     filterSaturation: 'Saturación',
     filterOpacity: 'Opacidad',
     filterOpacityBg: 'Fondo',
+    blackScreenSection: 'Pantalla negra (solo audio)',
+    blackScreenEnable: 'Activar pantalla negra',
+    blackScreenFormat: 'Formato',
+    blackScreenBg: 'Fondo',
+    blackScreenHint: 'Reemplaza la imagen por un fondo sólido del tamaño elegido. Se mantienen el audio, los cortes y los subtítulos — ideal para videos de solo audio con subtítulos.',
     filterSpeed: 'Velocidad',
     previewSpeed: 'Velocidad de previsualización',
     previewSpeedTitle: 'Velocidad de reproducción en la previsualización (no afecta al export)',
@@ -705,6 +725,9 @@ type ProjectState = {
   saturation: number;
   opacity: number;
   opacityBgColor: 'black' | 'white';
+  blackScreenEnabled?: boolean;
+  blackScreenAspectId?: string;
+  blackScreenBgColor?: 'black' | 'white';
   volumeDb: number;
   noiseGateDb: number;
   noiseGateEnabled: boolean;
@@ -953,6 +976,9 @@ export type VideoTemplate = {
   saturation: number;
   opacity: number;
   opacityBgColor: 'black' | 'white';
+  blackScreenEnabled?: boolean;
+  blackScreenAspectId?: string;
+  blackScreenBgColor?: 'black' | 'white';
   cropByZone: Record<string, CropRect>;
   cropApplyToAll: boolean;
   style: SubtitleStyle;
@@ -1153,6 +1179,9 @@ export default function Editor(props: EditorProps) {
   const [saturation, setSaturation] = useState<number>(100);
   const [opacity, setOpacity] = useState<number>(100);
   const [opacityBgColor, setOpacityBgColor] = useState<'black' | 'white'>('black');
+  const [blackScreenEnabled, setBlackScreenEnabled] = useState<boolean>(false);
+  const [blackScreenAspectId, setBlackScreenAspectId] = useState<string>(DEFAULT_BLACK_SCREEN_ASPECT);
+  const [blackScreenBgColor, setBlackScreenBgColor] = useState<'black' | 'white'>('black');
   const [cropByZone, setCropByZone] = useState<Record<string, CropRect>>({});
   const [cropApplyToAll, setCropApplyToAll] = useState<boolean>(true);
   const [styleByZone, setStyleByZone] = useState<Record<string, SubtitleStyle>>({});
@@ -1423,6 +1452,11 @@ export default function Editor(props: EditorProps) {
     setTimelapseTargetSec(60);
     setTimelapseMuteOriginal(true);
   }
+  function resetBlackScreen() {
+    setBlackScreenEnabled(false);
+    setBlackScreenAspectId(DEFAULT_BLACK_SCREEN_ASPECT);
+    setBlackScreenBgColor('black');
+  }
   function resetStyle() {
     if (splitMarkers.length > 0) {
       setStyleByZone(prev => {
@@ -1470,6 +1504,7 @@ export default function Editor(props: EditorProps) {
     resetAudio();
     resetFilters();
     resetTimelapse();
+    resetBlackScreen();
     resetStyle();
     resetSplits();
     setEditingCue(null);
@@ -1543,7 +1578,7 @@ export default function Editor(props: EditorProps) {
   }
 
   const [openSections, setOpenSections] = useState<Record<string, boolean>>({
-    crop: true, silence: true, audio: true, filters: true, timelapse: true, transcription: true, style: true, templates: true,
+    crop: true, silence: true, audio: true, filters: true, blackscreen: true, timelapse: true, transcription: true, style: true, templates: true,
     ...(initial.openSections ?? {}),
   });
 
@@ -1576,6 +1611,7 @@ export default function Editor(props: EditorProps) {
       thresholdDb, autoThreshold, minSilenceDur,
       cropEnabled, crop, cropBgColor, aspectId, cropByZone, cropApplyToAll,
       saturation, opacity, opacityBgColor,
+      blackScreenEnabled, blackScreenAspectId, blackScreenBgColor,
       style, styleByZone, styleApplyToAll,
       volumeDb, noiseGateDb, noiseGateEnabled,
       voiceCleanupEnabled, voiceCleanupIntensity,
@@ -1606,6 +1642,9 @@ export default function Editor(props: EditorProps) {
     setSaturation(typeof tpl.saturation === 'number' ? tpl.saturation : 100);
     setOpacity(typeof tpl.opacity === 'number' ? tpl.opacity : 100);
     setOpacityBgColor(tpl.opacityBgColor ?? 'black');
+    setBlackScreenEnabled(tpl.blackScreenEnabled ?? false);
+    setBlackScreenAspectId(tpl.blackScreenAspectId ?? DEFAULT_BLACK_SCREEN_ASPECT);
+    setBlackScreenBgColor(tpl.blackScreenBgColor ?? 'black');
     setStyle(tpl.style);
     setStyleByZone(tpl.styleByZone ?? {});
     setStyleApplyToAll(tpl.styleApplyToAll);
@@ -2140,7 +2179,9 @@ export default function Editor(props: EditorProps) {
     if (videoPath && videoPath !== filePath) {
       saveProject(videoPath, {
         silenceRegions, thresholdDb, autoThreshold, meanVolumeDb, minSilenceDur,
-        cropEnabled, crop, cropBgColor, aspectId, saturation, opacity, opacityBgColor, volumeDb, noiseGateDb, noiseGateEnabled,
+        cropEnabled, crop, cropBgColor, aspectId, saturation, opacity, opacityBgColor,
+        blackScreenEnabled, blackScreenAspectId, blackScreenBgColor,
+        volumeDb, noiseGateDb, noiseGateEnabled,
         voiceCleanupEnabled, voiceCleanupIntensity,
         srtPath, rawCues, wordsTs, style, language, model,
         splitMarkers, cropByZone, cropApplyToAll, styleByZone, styleApplyToAll, subtitlesEnabled, excludedSegments,
@@ -2171,6 +2212,9 @@ export default function Editor(props: EditorProps) {
       setSaturation(typeof saved.saturation === 'number' ? saved.saturation : 100);
       setOpacity(typeof saved.opacity === 'number' ? saved.opacity : 100);
       setOpacityBgColor(saved.opacityBgColor ?? 'black');
+      setBlackScreenEnabled(saved.blackScreenEnabled ?? false);
+      setBlackScreenAspectId(saved.blackScreenAspectId ?? DEFAULT_BLACK_SCREEN_ASPECT);
+      setBlackScreenBgColor(saved.blackScreenBgColor ?? 'black');
       setVolumeDb(saved.volumeDb ?? 0);
       setNoiseGateDb(saved.noiseGateDb ?? -40);
       setNoiseGateEnabled(saved.noiseGateEnabled ?? false);
@@ -2226,6 +2270,9 @@ export default function Editor(props: EditorProps) {
       setSaturation(100);
       setOpacity(100);
       setOpacityBgColor('black');
+      setBlackScreenEnabled(false);
+      setBlackScreenAspectId(DEFAULT_BLACK_SCREEN_ASPECT);
+      setBlackScreenBgColor('black');
       setVolumeDb(0);
       setNoiseGateDb(-40);
       setNoiseGateEnabled(false);
@@ -2255,7 +2302,9 @@ export default function Editor(props: EditorProps) {
       path: videoPath,
       state: {
         silenceRegions, thresholdDb, autoThreshold, meanVolumeDb, minSilenceDur,
-        cropEnabled, crop, cropBgColor, aspectId, saturation, opacity, opacityBgColor, volumeDb, noiseGateDb, noiseGateEnabled,
+        cropEnabled, crop, cropBgColor, aspectId, saturation, opacity, opacityBgColor,
+        blackScreenEnabled, blackScreenAspectId, blackScreenBgColor,
+        volumeDb, noiseGateDb, noiseGateEnabled,
         voiceCleanupEnabled, voiceCleanupIntensity,
         srtPath, rawCues, wordsTs, style, language, model,
         splitMarkers, cropByZone, cropApplyToAll, styleByZone, styleApplyToAll, subtitlesEnabled, excludedSegments,
@@ -2279,7 +2328,9 @@ export default function Editor(props: EditorProps) {
     }, 400);
     return () => clearTimeout(handle);
   }, [videoPath, silenceRegions, thresholdDb, autoThreshold, meanVolumeDb, minSilenceDur,
-      cropEnabled, crop, cropBgColor, aspectId, saturation, opacity, opacityBgColor, volumeDb, noiseGateDb, noiseGateEnabled,
+      cropEnabled, crop, cropBgColor, aspectId, saturation, opacity, opacityBgColor,
+      blackScreenEnabled, blackScreenAspectId, blackScreenBgColor,
+      volumeDb, noiseGateDb, noiseGateEnabled,
       voiceCleanupEnabled, voiceCleanupIntensity,
       srtPath, rawCues, style, language, model,
       splitMarkers, cropByZone, cropApplyToAll, styleByZone, styleApplyToAll, subtitlesEnabled, excludedSegments,
@@ -2450,10 +2501,11 @@ export default function Editor(props: EditorProps) {
     const hasGate = noiseGateEnabled && noiseGateDb < -0.01;
     const hasVoiceCleanup = voiceCleanupEnabled;
     const hasSplits = splitMarkers.length > 0;
-    const hasSaturation = Math.abs(saturation - 100) > 0.5;
-    const hasOpacity = opacity < 99.5;
+    const hasBlackScreen = blackScreenEnabled;
+    const hasSaturation = !hasBlackScreen && Math.abs(saturation - 100) > 0.5;
+    const hasOpacity = !hasBlackScreen && opacity < 99.5;
     const hasBgAudio = !!bgAudio && !bgAudio.muted && (bgAudio.outPoint - bgAudio.inPoint) > 0.02;
-    if (!hasSilence && !hasSubs && !hasCrop && !hasVolume && !hasGate && !hasVoiceCleanup && !hasSplits && !hasSaturation && !hasOpacity && !hasBgAudio) {
+    if (!hasSilence && !hasSubs && !hasCrop && !hasVolume && !hasGate && !hasVoiceCleanup && !hasSplits && !hasSaturation && !hasOpacity && !hasBgAudio && !hasBlackScreen) {
       setProc({ phase: 'error', message: t('nothingToExport') });
       return;
     }
@@ -2549,11 +2601,15 @@ export default function Editor(props: EditorProps) {
             };
           }
         }
+        const bsPreset = BLACK_SCREEN_PRESETS.find(p => p.id === blackScreenAspectId) ?? BLACK_SCREEN_PRESETS[0];
         const segOut = await window.subbi.exportVideo({
           videoPath,
           keepRanges: useKeep ? segKeep : undefined,
-          crop: hasCrop ? cropForTime(seg.start) : null,
-          cropBgColor: hasCrop ? cropBgColor : undefined,
+          crop: hasCrop && !hasBlackScreen ? cropForTime(seg.start) : null,
+          cropBgColor: hasCrop && !hasBlackScreen ? cropBgColor : undefined,
+          blackScreen: hasBlackScreen
+            ? { width: bsPreset.w, height: bsPreset.h, color: blackScreenBgColor }
+            : null,
           subtitles: hasSubs ? { srtPath: burnSrtPath!, style: burnStyle } : null,
           volumeDb: hasVolume ? volumeDb : 0,
           noiseGateDb: hasGate ? noiseGateDb : null,
@@ -2595,13 +2651,25 @@ export default function Editor(props: EditorProps) {
 
   const _videoNativeW = videoRef.current?.videoWidth ?? 0;
   const _videoNativeH = videoRef.current?.videoHeight ?? 0;
+  const bsPreset = blackScreenEnabled
+    ? (BLACK_SCREEN_PRESETS.find(p => p.id === blackScreenAspectId) ?? BLACK_SCREEN_PRESETS[0])
+    : null;
+  const bsFit = (() => {
+    if (!bsPreset || stageSize.w <= 0 || stageSize.h <= 0) return null;
+    const a = bsPreset.w / bsPreset.h;
+    const stageA = stageSize.w / stageSize.h;
+    return a > stageA
+      ? { w: stageSize.w, h: stageSize.w / a }
+      : { w: stageSize.h * a, h: stageSize.h };
+  })();
   const previewDisplayScale = (() => {
+    if (bsPreset) return bsFit ? bsFit.w / bsPreset.w : 1;
     if (!_videoNativeW || !_videoNativeH) return previewZoom;
     if (previewZoom !== 1) return previewZoom;
     if (stageSize.w <= 0 || stageSize.h <= 0) return 1;
     return Math.min(stageSize.w / _videoNativeW, stageSize.h / _videoNativeH);
   })();
-  const displayedVideoW = _videoNativeW * previewDisplayScale;
+  const displayedVideoW = bsFit ? bsFit.w : _videoNativeW * previewDisplayScale;
   const overlayStyle: React.CSSProperties = {
     bottom: `${effectiveStyle.marginVPct}%`,
     left: '50%',
@@ -2945,7 +3013,7 @@ export default function Editor(props: EditorProps) {
           </div>
         )}
         {videoUrl && (() => {
-          const cropApplied = cropEnabled && !cropEditing && videoW > 0 && videoH > 0;
+          const cropApplied = !bsPreset && cropEnabled && !cropEditing && videoW > 0 && videoH > 0;
           let croppedWrapW = 0, croppedWrapH = 0;
           if (cropApplied && stageSize.w > 0 && stageSize.h > 0) {
             const sliceAspect = (effectiveCrop.width * videoW) / (effectiveCrop.height * videoH);
@@ -2964,7 +3032,12 @@ export default function Editor(props: EditorProps) {
           const opacityActive = opacity < 100;
           const opacityBg = opacityBgColor === 'white' ? '#ffffff' : '#000000';
           const wrapBg = opacityActive ? opacityBg : cropBg;
-          const wrapStyle: React.CSSProperties | undefined = previewZoom !== 1
+          const bsBg = blackScreenBgColor === 'white' ? '#ffffff' : '#000000';
+          const wrapStyle: React.CSSProperties | undefined = bsPreset
+            ? (bsFit
+                ? { width: `${bsFit.w}px`, height: `${bsFit.h}px`, overflow: 'hidden', backgroundColor: bsBg }
+                : { backgroundColor: bsBg })
+            : previewZoom !== 1
             ? (cropApplied
                 ? {
                     width: `${baseW * effectiveCrop.width * previewZoom}px`,
@@ -2982,7 +3055,16 @@ export default function Editor(props: EditorProps) {
                 : (opacityActive ? { backgroundColor: opacityBg } : undefined));
           const filterCss = saturation !== 100 ? `saturate(${(saturation / 100).toFixed(3)})` : undefined;
           const opacityCss = opacityActive ? opacity / 100 : undefined;
-          const videoStyle: React.CSSProperties | undefined = cropApplied ? {
+          const videoStyle: React.CSSProperties | undefined = bsPreset ? {
+            position: 'absolute',
+            top: 0,
+            left: 0,
+            width: '100%',
+            height: '100%',
+            maxWidth: 'none',
+            maxHeight: 'none',
+            opacity: 0,
+          } : cropApplied ? {
             position: 'absolute',
             top: `${-effectiveCrop.y * 100 / effectiveCrop.height}%`,
             left: `${-effectiveCrop.x * 100 / effectiveCrop.width}%`,
@@ -3063,7 +3145,7 @@ export default function Editor(props: EditorProps) {
                 )}
               </div>
               )}
-              {cropEnabled && cropEditing && (
+              {!bsPreset && cropEnabled && cropEditing && (
                 <CropOverlay
                   videoEl={videoRef.current}
                   crop={effectiveCrop}
@@ -3983,6 +4065,62 @@ export default function Editor(props: EditorProps) {
                 >{t('cropBgWhite')}</button>
               </div>
             </div>
+          </div>
+        </div>
+
+        <div className={'pr-section' + (openSections.blackscreen ? ' is-open' : ' is-closed')}>
+          <button className="pr-section-head" onClick={() => toggleSection('blackscreen')} type="button">
+            <span className="pr-section-chev" />
+            <span className="pr-section-title">{t('blackScreenSection')}</span>
+            {blackScreenEnabled && (
+              <span className="pr-badge">{blackScreenAspectId}</span>
+            )}
+            {renderSectionReset(
+              'blackscreen',
+              resetBlackScreen,
+              blackScreenEnabled || blackScreenAspectId !== DEFAULT_BLACK_SCREEN_ASPECT || blackScreenBgColor !== 'black'
+            )}
+          </button>
+          <div className="pr-section-body">
+            <div className="pr-row">
+              <label className="pr-check">
+                <input
+                  type="checkbox"
+                  checked={blackScreenEnabled}
+                  disabled={!videoPath || isEditBusy}
+                  onChange={e => setBlackScreenEnabled(e.target.checked)}
+                />
+                <span>{t('blackScreenEnable')}</span>
+              </label>
+            </div>
+            <div className="pr-row">
+              <span className="pr-label">{t('blackScreenFormat')}</span>
+              <Select
+                className="pr-input-flex"
+                value={blackScreenAspectId}
+                onChange={v => setBlackScreenAspectId(v)}
+                disabled={!videoPath || isEditBusy || !blackScreenEnabled}
+                options={BLACK_SCREEN_PRESETS.map(p => ({ value: p.id, label: p.label }))}
+              />
+            </div>
+            <div className="pr-row">
+              <span className="pr-label">{t('blackScreenBg')}</span>
+              <div className="pr-aspect-row">
+                <button
+                  type="button"
+                  disabled={!videoPath || isEditBusy || !blackScreenEnabled}
+                  onClick={() => setBlackScreenBgColor('black')}
+                  className={'pr-chip' + (blackScreenBgColor === 'black' ? ' pr-chip-on' : '')}
+                >{t('cropBgBlack')}</button>
+                <button
+                  type="button"
+                  disabled={!videoPath || isEditBusy || !blackScreenEnabled}
+                  onClick={() => setBlackScreenBgColor('white')}
+                  className={'pr-chip' + (blackScreenBgColor === 'white' ? ' pr-chip-on' : '')}
+                >{t('cropBgWhite')}</button>
+              </div>
+            </div>
+            <div className="pr-hint">{t('blackScreenHint')}</div>
           </div>
         </div>
 

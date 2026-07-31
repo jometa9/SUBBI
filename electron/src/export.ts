@@ -84,6 +84,7 @@ export interface ExportOptions {
   saturation?: number;
   opacity?: number;
   opacityBgColor?: 'black' | 'white';
+  blackScreen?: { width: number; height: number; color: 'black' | 'white' } | null;
   speed?: number;
   muteOriginal?: boolean;
   outputPath?: string;
@@ -336,9 +337,15 @@ export async function exportVideo(
 
   const baseVideoW = opts.videoWidth && opts.videoWidth > 0 ? opts.videoWidth : 1280;
   const baseVideoH = opts.videoHeight && opts.videoHeight > 0 ? opts.videoHeight : 720;
-  const outSize = opts.crop
-    ? computeCropOutputSize(opts.crop, baseVideoW, baseVideoH)
-    : { w: baseVideoW, h: baseVideoH };
+  const bs = opts.blackScreen && opts.blackScreen.width > 0 && opts.blackScreen.height > 0
+    ? opts.blackScreen
+    : null;
+  const evenSize = (v: number) => Math.max(2, Math.round(v / 2) * 2);
+  const outSize = bs
+    ? { w: evenSize(bs.width), h: evenSize(bs.height) }
+    : opts.crop
+      ? computeCropOutputSize(opts.crop, baseVideoW, baseVideoH)
+      : { w: baseVideoW, h: baseVideoH };
   const assPath = opts.subtitles
     ? buildAssFromSrt(opts.subtitles.srtPath, opts.subtitles.style, outSize.w, outSize.h)
     : null;
@@ -346,11 +353,16 @@ export async function exportVideo(
   const filterParts: string[] = [];
   let videoSourceLabel = '[0:v]';
   const satRaw = typeof opts.saturation === 'number' && isFinite(opts.saturation) ? opts.saturation : 100;
-  const wantsSaturation = Math.abs(satRaw - 100) > 0.5;
+  const wantsSaturation = !bs && Math.abs(satRaw - 100) > 0.5;
   const opRaw = typeof opts.opacity === 'number' && isFinite(opts.opacity) ? opts.opacity : 100;
-  const wantsOpacity = opRaw < 99.5;
+  const wantsOpacity = !bs && opRaw < 99.5;
   const linearV: string[] = [];
-  if (opts.crop) linearV.push(buildCropFilter(opts.crop, opts.cropBgColor || 'black'));
+  if (bs) {
+    linearV.push(
+      `scale=${outSize.w}:${outSize.h},drawbox=x=0:y=0:w=iw:h=ih:color=${bs.color === 'white' ? 'white' : 'black'}:t=fill,setsar=1`
+    );
+  }
+  if (!bs && opts.crop) linearV.push(buildCropFilter(opts.crop, opts.cropBgColor || 'black'));
   if (wantsSaturation) {
     const sat = Math.max(0, Math.min(3, satRaw / 100));
     linearV.push(`eq=saturation=${sat.toFixed(3)}`);

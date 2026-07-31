@@ -72,6 +72,7 @@ interface SubbiAPI {
     saturation?: number;
     opacity?: number;
     opacityBgColor?: 'black' | 'white';
+    blackScreen?: { width: number; height: number; color: 'black' | 'white' } | null;
     speed?: number;
     muteOriginal?: boolean;
     outputPath?: string;
